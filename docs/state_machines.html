@@ -1,0 +1,526 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>红色系统状态机预览</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f7f3ea;
+      --paper: #fffaf0;
+      --ink: #171512;
+      --muted: #6e665d;
+      --line: #d9cdbc;
+      --strong: #24201b;
+      --red: #b5222f;
+      --blue: #245468;
+      --amber: #926100;
+      --code: #f0e6d4;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      margin: 0;
+      background:
+        repeating-linear-gradient(0deg, transparent 0 31px, rgba(23, 21, 18, 0.04) 31px 32px),
+        var(--bg);
+      color: var(--ink);
+      font: 15px/1.7 "Noto Serif CJK SC", "Source Han Serif SC", SimSun, serif;
+      letter-spacing: 0;
+    }
+
+    a {
+      color: inherit;
+      text-decoration: none;
+    }
+
+    code {
+      display: inline-block;
+      max-width: 100%;
+      padding: 1px 5px;
+      border: 1px solid rgba(36, 32, 27, 0.16);
+      border-radius: 3px;
+      background: var(--code);
+      font: 0.93em/1.45 Consolas, "Cascadia Mono", monospace;
+      overflow-wrap: anywhere;
+    }
+
+    header {
+      border-bottom: 3px double var(--strong);
+      background: var(--paper);
+    }
+
+    .hero {
+      width: min(1080px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 42px 0 26px;
+    }
+
+    .eyebrow {
+      margin: 0 0 10px;
+      color: var(--blue);
+      font: 800 12px/1.2 Consolas, "Cascadia Mono", monospace;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    h1,
+    h2 {
+      margin: 0;
+      letter-spacing: 0;
+    }
+
+    h1 {
+      font-size: clamp(34px, 6vw, 72px);
+      line-height: 1.05;
+      font-weight: 900;
+    }
+
+    .summary {
+      max-width: 760px;
+      margin: 14px 0 0;
+      color: var(--muted);
+      font-size: 17px;
+    }
+
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      min-height: 24px;
+      border: 1px solid currentColor;
+      border-radius: 999px;
+      padding: 1px 8px;
+      font: 800 12px/1.3 Consolas, "Cascadia Mono", monospace;
+      white-space: nowrap;
+    }
+
+    .preview {
+      color: var(--blue);
+      background: rgba(36, 84, 104, 0.08);
+    }
+
+    .unknown {
+      color: var(--amber);
+      background: rgba(146, 97, 0, 0.08);
+    }
+
+    nav {
+      border-top: 1px solid var(--line);
+      background: rgba(255, 250, 240, 0.9);
+    }
+
+    .nav-inner {
+      display: flex;
+      gap: 8px;
+      width: min(1080px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 10px 0;
+      overflow-x: auto;
+      scrollbar-width: none;
+    }
+
+    .nav-inner::-webkit-scrollbar {
+      display: none;
+    }
+
+    nav a {
+      flex: 0 0 auto;
+      border: 1px solid var(--line);
+      border-radius: 4px;
+      padding: 7px 10px;
+      background: #fff8e9;
+      font-weight: 800;
+    }
+
+    main {
+      width: min(1080px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 22px 0 48px;
+    }
+
+    section {
+      scroll-margin-top: 16px;
+      padding: 26px 0;
+      border-top: 2px solid var(--strong);
+    }
+
+    section:first-child {
+      border-top: 0;
+    }
+
+    .section-head {
+      display: grid;
+      grid-template-columns: minmax(0, 0.68fr) minmax(240px, 0.32fr);
+      gap: 18px;
+      align-items: end;
+      margin-bottom: 12px;
+    }
+
+    h2 {
+      font-size: clamp(25px, 4vw, 42px);
+      line-height: 1.08;
+      font-weight: 900;
+    }
+
+    .section-head p {
+      margin: 0;
+      color: var(--muted);
+    }
+
+    .table-wrap {
+      overflow-x: auto;
+      border-top: 2px solid var(--strong);
+      border-bottom: 2px solid var(--strong);
+      background: rgba(255, 250, 240, 0.86);
+    }
+
+    table {
+      width: 100%;
+      min-width: 720px;
+      border-collapse: collapse;
+    }
+
+    th,
+    td {
+      padding: 9px 11px;
+      border-right: 1px solid var(--line);
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+      overflow-wrap: anywhere;
+    }
+
+    th:last-child,
+    td:last-child {
+      border-right: 0;
+    }
+
+    tr:last-child td {
+      border-bottom: 0;
+    }
+
+    th {
+      background: #eadcc5;
+      font: 900 12px/1.25 Consolas, "Cascadia Mono", monospace;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .chain {
+      counter-reset: step;
+      border-top: 2px solid var(--strong);
+      border-bottom: 2px solid var(--strong);
+      background: rgba(255, 250, 240, 0.86);
+    }
+
+    .chain-row {
+      counter-increment: step;
+      display: grid;
+      grid-template-columns: 72px minmax(0, 1fr);
+      gap: 12px;
+      padding: 13px 0;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .chain-row:last-child {
+      border-bottom: 0;
+    }
+
+    .chain-row::before {
+      content: "0" counter(step);
+      padding-left: 12px;
+      color: var(--red);
+      font: 900 24px/1 Georgia, "Times New Roman", serif;
+    }
+
+    .chain-row strong {
+      display: block;
+      font: 900 16px/1.25 Consolas, "Cascadia Mono", monospace;
+    }
+
+    .chain-row p {
+      margin: 5px 12px 0 0;
+      color: var(--muted);
+    }
+
+    .keys {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      border-top: 2px solid var(--strong);
+      border-bottom: 2px solid var(--strong);
+      background: rgba(255, 250, 240, 0.86);
+    }
+
+    .key {
+      padding: 12px;
+      border-right: 1px solid var(--line);
+    }
+
+    .key:last-child {
+      border-right: 0;
+    }
+
+    .key h3 {
+      margin: 0 0 8px;
+      font-size: 17px;
+    }
+
+    .key ul {
+      margin: 0;
+      padding-left: 18px;
+    }
+
+    @media (max-width: 760px) {
+      .section-head,
+      .keys {
+        grid-template-columns: 1fr;
+      }
+
+      .key {
+        border-right: 0;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .key:last-child {
+        border-bottom: 0;
+      }
+
+      h1 {
+        font-size: 34px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="hero">
+      <p class="eyebrow">State Machine Preview</p>
+      <h1>红色系统状态机预览</h1>
+      <p class="summary">红色激光系统当前状态机预览，状态标记均为 <span class="tag preview">preview</span>；依据为 <code>PROJECT.md</code>。</p>
+    </div>
+    <nav aria-label="状态机预览目录">
+      <div class="nav-inner">
+        <a href="#scope">范围依据</a>
+        <a href="#runtime">运行链路</a>
+        <a href="#main-state">主状态</a>
+        <a href="#transitions">转换覆盖</a>
+        <a href="#path-state">路径子状态</a>
+        <a href="#vision-state">视觉状态</a>
+        <a href="#protocol">通信</a>
+        <a href="#keys">按键</a>
+      </div>
+    </nav>
+  </header>
+
+  <main>
+    <section id="scope">
+      <div class="section-head">
+        <h2>范围依据</h2>
+        <p>只覆盖红色系统基本要求（1）-（4）的状态机预览。</p>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <tbody>
+            <tr><td>范围</td><td>启动屏幕标定、红色复位、屏幕正方形边线、A4 靶纸边线、旋转 A4 靶纸边线。</td></tr>
+            <tr><td>依据</td><td><code>PROJECT.md</code> 中的项目地图、状态机总览、接入规则和题目验证指标。</td></tr>
+            <tr><td>状态</td><td><span class="tag preview">preview</span> 表示实现前契约；<span class="tag unknown">unknown</span> 表示源码或硬件信息未确认。</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="runtime">
+      <div class="section-head">
+        <h2>运行链路</h2>
+        <p>主状态推进比赛流程；红点坐标长期流和 A4 锁存结果由视觉侧上报。</p>
+      </div>
+      <div class="chain">
+        <div class="chain-row"><div><strong>BOOT</strong><p>初始化 app 状态，确认视觉在线，建立安全输出。</p></div></div>
+        <div class="chain-row"><div><strong>CALIB_SCREEN</strong><p>电机失能，<code>SPOT640</code> 持续上报红点；<code>K2</code> 保存 <code>P0~P4</code>。</p></div></div>
+        <div class="chain-row"><div><strong>IDLE</strong><p>等待 <code>K2</code> 启动当前模式，<code>K3</code> 切换模式，<code>K1</code> 长按复位。</p></div></div>
+        <div class="chain-row"><div><strong>RUN / RESET</strong><p><code>RESET_RUN</code>、<code>SQUARE_RUN</code> 和 <code>A4_RUN</code> 依赖 <code>SPOT</code> 新鲜坐标推进或观测。</p></div></div>
+        <div class="chain-row"><div><strong>A4 DETECT / LOCK</strong><p><code>A4GRAY</code> 检测 A4，<code>LOCK_A4</code> 后一次性锁存角点给 TI。</p></div></div>
+        <div class="chain-row"><div><strong>PAUSED / DONE / ERROR</strong><p>TI 先制动，再按需发送 <code>STOP</code>，保留完成或失败原因。</p></div></div>
+      </div>
+    </section>
+
+    <section id="main-state">
+      <div class="section-head">
+        <h2>主状态</h2>
+        <p><code>app_red_task</code> 管理模式、启动、暂停、完成和错误出口。</p>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>状态</th><th>职责</th><th>进入条件</th><th>退出条件</th><th>标记</th></tr></thead>
+          <tbody>
+            <tr><td><code>BOOT</code></td><td>初始化 app 层状态、确认视觉在线、建立安全输出。</td><td>上电或软件复位。</td><td>初始化完成进入 <code>CALIB_SCREEN</code>；关键依赖失败进入 <code>ERROR</code>。</td><td><span class="tag preview">preview</span></td></tr>
+            <tr><td><code>CALIB_SCREEN</code></td><td>电机失能，使用 <code>SPOT640</code> 红点坐标保存 <code>P0~P4</code>。</td><td><code>BOOT</code> 完成，或用户重新进入屏幕标定。</td><td>按原点、左上、右上、右下、左下顺序全部保存后进入 <code>IDLE</code>；保存失败进入 <code>ERROR</code>。</td><td><span class="tag preview">preview</span></td></tr>
+            <tr><td><code>IDLE</code></td><td>等待模式选择和启动命令，保持激光输出安全。</td><td><code>CALIB_SCREEN</code> 完成、任务完成、用户停止、错误复位。</td><td><code>K2</code> 启动当前模式；<code>K3</code> 切换模式；<code>K1</code> 长按进入 <code>RESET_RUN</code>。</td><td><span class="tag preview">preview</span></td></tr>
+            <tr><td><code>RESET_RUN</code></td><td>从任意位置回到原点 <code>P0</code>，复位运动由 TI 和运动控制模块负责。</td><td><code>IDLE</code> 或运行态收到 <code>K1</code> 长按。</td><td>到达原点进入 <code>DONE</code>；超时、红点失效或限位进入 <code>ERROR</code>；<code>K1</code> 短按进入 <code>PAUSED</code>。</td><td><span class="tag preview">preview</span></td></tr>
+            <tr><td><code>SQUARE_RUN</code></td><td>沿屏幕 0.5m x 0.5m 正方形边线顺时针一周，使用 <code>P1~P4</code> 和红点坐标。</td><td>屏幕标定有效，选择屏幕边线模式并启动。</td><td>一周完成进入 <code>DONE</code>；30 秒超时、脱轨、红点过期或输出异常进入 <code>ERROR</code>；<code>K1</code> 短按进入 <code>PAUSED</code>。</td><td><span class="tag preview">preview</span></td></tr>
+            <tr><td><code>A4_DETECT</code></td><td>请求 MaixCAM-Pro 进入 <code>A4GRAY</code>，等待 A4 黑色电工胶带稳定。</td><td>选择 A4 或旋转 A4 模式并启动。</td><td>视觉结果可锁存进入 <code>A4_READY</code>；检测超时或通信失败进入 <code>ERROR</code>；<code>K1</code> 短按进入 <code>PAUSED</code>。</td><td><span class="tag preview">preview</span></td></tr>
+            <tr><td><code>A4_READY</code></td><td>发送 <code>LOCK_A4</code>，锁存本轮 A4 角点并转换为运动控制目标点。</td><td><code>A4_DETECT</code> 获得稳定 A4 结果。</td><td>收到 <code>A4_LOCKED</code> 并路径生成成功后进入 <code>A4_RUN</code>；角点无效、ACK 失败或映射失败进入 <code>ERROR</code>。</td><td><span class="tag preview">preview</span></td></tr>
+            <tr><td><code>A4_RUN</code></td><td>沿已锁存的 A4 黑胶带中心线路径顺时针一周，运行期切回 <code>SPOT640</code> 上报红点。</td><td><code>A4_READY</code> 路径生成完成。</td><td>一周完成进入 <code>DONE</code>；30 秒超时、连续脱离、红点过期或运动异常进入 <code>ERROR</code>；<code>K1</code> 短按进入 <code>PAUSED</code>。</td><td><span class="tag preview">preview</span></td></tr>
+            <tr><td><code>PAUSED</code></td><td>立即制动并保留可恢复上下文。</td><td>运行态收到 <code>K1</code> 短按。</td><td><code>K2</code> 恢复前一运行态；<code>K1</code> 长按转入 <code>RESET_RUN</code>；二次短按放弃并进入 <code>IDLE</code>。</td><td><span class="tag preview">preview</span></td></tr>
+            <tr><td><code>DONE</code></td><td>停止运动输出，记录正常完成原因。</td><td>复位、屏幕边线或 A4 路径正常完成。</td><td>状态上报完成后进入 <code>IDLE</code>，或等待用户确认后进入 <code>IDLE</code>。</td><td><span class="tag preview">preview</span></td></tr>
+            <tr><td><code>ERROR</code></td><td>安全输出，记录错误原因，等待用户清错或复位。</td><td>初始化、标定、检测、路径、运动、通信或超时失败。</td><td>清错后进入 <code>IDLE</code>；<code>K1</code> 长按可尝试 <code>RESET_RUN</code>；无法清错则保持。</td><td><span class="tag preview">preview</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="transitions">
+      <div class="section-head">
+        <h2>转换覆盖</h2>
+        <p>只列状态推进、按键、完成和错误出口。</p>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>当前状态</th><th>事件/条件</th><th>下一状态</th><th>动作</th><th>标记</th></tr></thead>
+          <tbody>
+            <tr><td><code>BOOT</code></td><td>初始化完成，视觉在线</td><td><code>CALIB_SCREEN</code></td><td>发送 <code>PING</code> 和 <code>MODE,SPOT640</code>，电机失能，准备保存 <code>P0</code>。</td><td><span class="tag preview">preview</span></td></tr>
+            <tr><td><code>BOOT</code></td><td>关键依赖失败或 <code>PING</code> 超时</td><td><code>ERROR</code></td><td>停止运动输出，记录错误原因。</td><td><span class="tag preview">preview</span></td></tr>
+            <tr><td><code>CALIB_SCREEN</code></td><td>收到有效 <code>SPOT</code></td><td><code>CALIB_SCREEN</code></td><td>缓存最近红点坐标、置信度和帧号。</td><td><span class="tag preview">preview</span></td></tr>
+            <tr><td><code>CALIB_SCREEN</code></td><td><code>K2</code> 且当前 <code>SPOT</code> 有效</td><td><code>CALIB_SCREEN</code> 或 <code>IDLE</code></td><td>按 <code>P0/P1/P2/P3/P4</code> 顺序保存；全部保存后置 <code>calib_valid=1</code>。</td><td><span class="tag preview">preview</span></td></tr>
+            <tr><td><code>CALIB_SCREEN</code></td><td><code>K2</code> 但红点无效或保存失败</td><td><code>ERROR</code></td><td>记录 <code>VISION_SPOT_INVALID</code> 或存储错误。</td><td><span class="tag preview">preview</span></td></tr>
+            <tr><td><code>CALIB_SCREEN</code></td><td><code>K3</code></td><td><code>CALIB_SCREEN</code></td><td>切换当前选择项；不改变已保存点。</td><td><span class="tag preview">preview</span></td></tr>
+            <tr><td><code>CALIB_SCREEN</code></td><td><code>K1</code> 短按</td><td><code>IDLE</code></td><td>放弃本轮未保存调整，保持已保存数据。</td><td><span class="tag preview">preview</span></td></tr>
+            <tr><td><code>IDLE</code></td><td><code>K3</code></td><td><code>IDLE</code></td><td>循环切换 <code>mode</code>，不包含复位模式。</td><td><span class="tag preview">preview</span></td></tr>
+            <tr><td><code>IDLE</code></td><td><code>K1</code> 长按且 <code>P0</code> 有效</td><td><code>RESET_RUN</code></td><td>发送 <code>MODE,SPOT640</code>，装载原点目标。</td><td><span class="tag preview">preview</span></td></tr>
+            <tr><td><code>IDLE</code></td><td><code>K2</code> 且 <code>mode=SQUARE</code> 且屏幕标定有效</td><td><code>SQUARE_RUN</code></td><td>发送 <code>MODE,SPOT640</code>，装载 <code>P1~P4</code> 正方形路径。</td><td><span class="tag preview">preview</span></td></tr>
+            <tr><td><code>IDLE</code></td><td><code>K2</code> 且 <code>mode=A4</code> 或 <code>mode=A4_ROT</code></td><td><code>A4_DETECT</code></td><td>发送 <code>MODE,A4GRAY</code>，清空旧 A4 结果。</td><td><span class="tag preview">preview</span></td></tr>
+            <tr><td><code>IDLE</code></td><td>启动条件不满足</td><td><code>ERROR</code></td><td>记录未标定、模式无效、视觉离线或对应原因。</td><td><span class="tag preview">preview</span></td></tr>
+            <tr><td><code>RESET_RUN</code></td><td>到达原点</td><td><code>DONE</code></td><td>停止输出，记录正常复位完成。</td><td><span class="tag preview">preview</span></td></tr>
+            <tr><td><code>SQUARE_RUN</code></td><td>四边一周完成</td><td><code>DONE</code></td><td>停止输出，记录路径完成。</td><td><span class="tag preview">preview</span></td></tr>
+            <tr><td><code>A4_DETECT</code></td><td>A4 稳定可锁存</td><td><code>A4_READY</code></td><td>发送 <code>LOCK_A4</code>，等待 <code>A4_LOCKED</code>。</td><td><span class="tag preview">preview</span></td></tr>
+            <tr><td><code>A4_READY</code></td><td>收到 <code>A4_LOCKED</code> 且路径生成成功</td><td><code>A4_RUN</code></td><td>发送 <code>ACK,A4_LOCKED</code>，锁存 A4 角点，切回 <code>MODE,SPOT640</code>。</td><td><span class="tag preview">preview</span></td></tr>
+            <tr><td><code>A4_READY</code></td><td><code>A4_LOCKED</code> 超时、角点无效或映射失败</td><td><code>ERROR</code></td><td>记录 <code>VISION_A4_TIMEOUT</code>、<code>A4_INVALID</code> 或映射失败。</td><td><span class="tag preview">preview</span></td></tr>
+            <tr><td><code>A4_RUN</code></td><td>A4 一周完成</td><td><code>DONE</code></td><td>停止输出，记录路径完成。</td><td><span class="tag preview">preview</span></td></tr>
+            <tr><td><code>RESET_RUN/SQUARE_RUN/A4_DETECT/A4_RUN</code></td><td><code>K1</code> 短按</td><td><code>PAUSED</code></td><td>立即制动，保存前一状态和任务上下文。</td><td><span class="tag preview">preview</span></td></tr>
+            <tr><td><code>RESET_RUN/SQUARE_RUN/A4_RUN</code></td><td><code>K1</code> 长按</td><td><code>RESET_RUN</code></td><td>立即制动后装载 <code>P0</code> 复位目标。</td><td><span class="tag preview">preview</span></td></tr>
+            <tr><td><code>PAUSED</code></td><td><code>K2</code></td><td><code>prev_state</code></td><td>恢复运行上下文。</td><td><span class="tag preview">preview</span></td></tr>
+            <tr><td><code>PAUSED</code></td><td><code>K1</code> 短按放弃</td><td><code>IDLE</code></td><td>清除运行上下文，保持停止。</td><td><span class="tag preview">preview</span></td></tr>
+            <tr><td><code>PAUSED</code></td><td><code>K1</code> 长按且 <code>P0</code> 有效</td><td><code>RESET_RUN</code></td><td>装载原点目标并保持视觉 <code>SPOT640</code>。</td><td><span class="tag preview">preview</span></td></tr>
+            <tr><td>任意运行态</td><td>超时、限位、通信失败、红点过期、路径失败、运动异常</td><td><code>ERROR</code></td><td>安全输出，记录最近状态和错误原因。</td><td><span class="tag preview">preview</span></td></tr>
+            <tr><td><code>DONE/ERROR</code></td><td>用户确认、清错或收尾完成</td><td><code>IDLE</code></td><td>发送 <code>STOP</code> 或保持低频 <code>STATUS</code>，清理临时路径。</td><td><span class="tag preview">preview</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="path-state">
+      <div class="section-head">
+        <h2>路径子状态</h2>
+        <p>路径进度按稳定完成边界推进。</p>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>状态</th><th>职责</th><th>退出条件</th><th>标记</th></tr></thead>
+          <tbody>
+            <tr><td><code>PATH_IDLE</code></td><td>无路径任务，输出安全。</td><td>主状态机装载路径后进入 <code>PATH_LOAD</code>。</td><td><span class="tag preview">preview</span></td></tr>
+            <tr><td><code>PATH_LOAD</code></td><td>校验点数、目标坐标、速度参数、限位。</td><td>有效进入 <code>PATH_GOTO_START</code>；无效进入 <code>PATH_FAULT</code>。</td><td><span class="tag preview">preview</span></td></tr>
+            <tr><td><code>PATH_GOTO_START</code></td><td>先移动到路径起点，避免从任意位置直接扫边。</td><td>到达起点进入 <code>PATH_TRACE_SEGMENT</code>；超时进入 <code>PATH_FAULT</code>。</td><td><span class="tag preview">preview</span></td></tr>
+            <tr><td><code>PATH_TRACE_SEGMENT</code></td><td>沿当前边线段执行插补或闭环跟踪。</td><td>当前段完成进入 <code>PATH_NEXT_SEGMENT</code>；偏差或超时进入 <code>PATH_FAULT</code>。</td><td><span class="tag preview">preview</span></td></tr>
+            <tr><td><code>PATH_NEXT_SEGMENT</code></td><td>提交稳定完成边界，推进段号。</td><td>还有线段则回 <code>PATH_TRACE_SEGMENT</code>；一周完成进入 <code>PATH_DONE</code>。</td><td><span class="tag preview">preview</span></td></tr>
+            <tr><td><code>PATH_DONE</code></td><td>路径正常完成，等待主状态机收尾。</td><td>主状态机读取完成后回 <code>PATH_IDLE</code>。</td><td><span class="tag preview">preview</span></td></tr>
+            <tr><td><code>PATH_FAULT</code></td><td>停止运动输出，保留失败原因。</td><td>主状态机进入 <code>ERROR</code> 后清理。</td><td><span class="tag preview">preview</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="vision-state">
+      <div class="section-head">
+        <h2>视觉状态</h2>
+        <p>MaixCAM-Pro 只输出红点坐标流、A4 锁存结果和视觉错误原因。</p>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>状态</th><th>职责</th><th>进入/退出</th><th>标记</th></tr></thead>
+          <tbody>
+            <tr><td><code>VISION_IDLE</code></td><td>等待 TI 请求，不把旧结果作为当前有效结果。</td><td>收到 <code>MODE,SPOT640</code> 进入 <code>VISION_SPOT640</code>；收到 <code>MODE,A4GRAY</code> 进入 <code>VISION_A4GRAY</code>。</td><td><span class="tag preview">preview</span></td></tr>
+            <tr><td><code>VISION_SPOT640</code></td><td>使用 <code>640x480 RGB888</code> 检测红色激光点，长期发送 <code>SPOT</code>。</td><td>收到 <code>MODE,A4GRAY</code> 切换 A4 检测；收到 <code>STOP</code> 回 <code>VISION_IDLE</code>；检测异常进入 <code>VISION_ERROR</code>。</td><td><span class="tag preview">preview</span></td></tr>
+            <tr><td><code>VISION_A4GRAY</code></td><td>使用 <code>320x240 grayscale</code> 检测 A4 黑色电工胶带，过滤不稳定候选。</td><td>收到 <code>LOCK_A4</code> 且结果稳定进入 <code>VISION_A4_LOCKED</code>；超时或低置信进入 <code>VISION_ERROR</code>。</td><td><span class="tag preview">preview</span></td></tr>
+            <tr><td><code>VISION_A4_LOCKED</code></td><td>锁存 A4 黑胶带中心线四角点、角度、置信度和帧号。</td><td>发送 <code>A4_LOCKED</code>，直到收到 <code>ACK,A4_LOCKED</code>、收到新模式命令或重发次数用尽。</td><td><span class="tag preview">preview</span></td></tr>
+            <tr><td><code>VISION_ERROR</code></td><td>记录红点无效、无 A4、低置信、通信或处理异常。</td><td>收到新 <code>MODE</code> 或 <code>STOP</code> 后清理并切换状态。</td><td><span class="tag preview">preview</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="protocol">
+      <div class="section-head">
+        <h2>通信</h2>
+        <p>TI 是命令方和状态机 owner；MaixCAM-Pro 是视觉检测 owner。</p>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>项</th><th>约定</th><th>标记</th></tr></thead>
+          <tbody>
+            <tr><td>物理层</td><td><code>3.3V TTL UART</code>，共地，默认 <code>115200 8N1</code>。</td><td><span class="tag preview">preview</span></td></tr>
+            <tr><td>包格式</td><td>ASCII CSV，一行一包，<code>\r\n</code> 结尾；<code>#</code> 开头为视觉调试行，TI 忽略。</td><td><span class="tag preview">preview</span></td></tr>
+            <tr><td>TI 命令</td><td><code>&gt;T,&lt;seq&gt;,&lt;cmd&gt;[,&lt;arg&gt;...]</code>；<code>seq</code> 由 TI 递增。</td><td><span class="tag preview">preview</span></td></tr>
+            <tr><td>视觉回包</td><td><code>&lt;C,&lt;seq&gt;,&lt;type&gt;[,&lt;field&gt;...]</code>；一次性结果必须匹配当前请求。</td><td><span class="tag preview">preview</span></td></tr>
+            <tr><td>长期数据</td><td>只有 <code>SPOT</code> 长期发送；标定点和 A4 锁存结果由 TI 保存或锁存。</td><td><span class="tag preview">preview</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>方向</th><th>包</th><th>用途</th><th>标记</th></tr></thead>
+          <tbody>
+            <tr><td>TI-&gt;MaixCAM</td><td><code>&gt;T,seq,PING</code></td><td>确认视觉模块在线。</td><td><span class="tag preview">preview</span></td></tr>
+            <tr><td>TI-&gt;MaixCAM</td><td><code>&gt;T,seq,MODE,SPOT640</code></td><td>进入 <code>640x480 RGB888</code> 红点检测，持续上报 <code>SPOT</code>。</td><td><span class="tag preview">preview</span></td></tr>
+            <tr><td>TI-&gt;MaixCAM</td><td><code>&gt;T,seq,MODE,A4GRAY</code></td><td>进入 <code>320x240 grayscale</code> A4 黑胶带检测。</td><td><span class="tag preview">preview</span></td></tr>
+            <tr><td>TI-&gt;MaixCAM</td><td><code>&gt;T,seq,LOCK_A4</code></td><td>要求锁存当前稳定 A4 结果。</td><td><span class="tag preview">preview</span></td></tr>
+            <tr><td>TI-&gt;MaixCAM</td><td><code>&gt;T,seq,ACK,A4_LOCKED</code></td><td>确认 TI 已收到并锁存 A4 角点。</td><td><span class="tag preview">preview</span></td></tr>
+            <tr><td>TI-&gt;MaixCAM</td><td><code>&gt;T,seq,STOP</code></td><td>停止本轮检测或停止重复发送一次性结果。</td><td><span class="tag preview">preview</span></td></tr>
+            <tr><td>MaixCAM-&gt;TI</td><td><code>&lt;C,seq,ACK,cmd,ok,err</code></td><td>确认命令接收和执行结果。</td><td><span class="tag preview">preview</span></td></tr>
+            <tr><td>MaixCAM-&gt;TI</td><td><code>&lt;C,seq,SPOT,frame,iw,ih,valid,x,y,conf,lat,err</code></td><td>当前红色激光点像素坐标；原点为图像左上角。</td><td><span class="tag preview">preview</span></td></tr>
+            <tr><td>MaixCAM-&gt;TI</td><td><code>&lt;C,seq,A4_LOCKED,frame,iw,ih,x0,y0,x1,y1,x2,y2,x3,y3,angle10,conf,err</code></td><td>A4 黑胶带中心线四角点，顺时针顺序；<code>angle10</code> 单位为 0.1 度。</td><td><span class="tag preview">preview</span></td></tr>
+            <tr><td>MaixCAM-&gt;TI</td><td><code>&lt;C,seq,STATUS,mode,fps10,frame,err</code></td><td>低频状态观测；<code>fps10</code> 为 FPS x 10。</td><td><span class="tag preview">preview</span></td></tr>
+            <tr><td>MaixCAM-&gt;TI</td><td><code>&lt;C,seq,ERR,code</code></td><td>视觉侧错误码。</td><td><span class="tag preview">preview</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>TI 状态</th><th>通信行为</th><th>超时/重复</th><th>标记</th></tr></thead>
+          <tbody>
+            <tr><td><code>BOOT</code></td><td>发送 <code>PING</code>，可查询 <code>STATUS</code>。</td><td><code>500ms</code> 无 ACK 记 <code>VISION_OFFLINE</code>。</td><td><span class="tag preview">preview</span></td></tr>
+            <tr><td><code>CALIB_SCREEN</code></td><td>发送 <code>MODE,SPOT640</code>；MaixCAM 持续发送 <code>SPOT</code>；TI 在 <code>K2</code> 保存最近有效点。</td><td><code>SPOT</code> 超过 <code>150ms</code> 未更新记 <code>VISION_SPOT_STALE</code>。</td><td><span class="tag preview">preview</span></td></tr>
+            <tr><td><code>IDLE</code></td><td>可发送 <code>STOP</code> 或低频 <code>STATUS</code>；不长期刷标定结果。</td><td>无实时视觉依赖。</td><td><span class="tag preview">preview</span></td></tr>
+            <tr><td><code>RESET_RUN</code></td><td>保持 <code>SPOT640</code>；TI 用 <code>SPOT</code> 与已保存 <code>P0</code> 做复位观测或闭环。</td><td><code>SPOT</code> 过期进入 <code>ERROR</code>。</td><td><span class="tag preview">preview</span></td></tr>
+            <tr><td><code>SQUARE_RUN</code></td><td>保持 <code>SPOT640</code>；TI 用 <code>P1~P4</code> 跑边线，并用红点坐标纠偏或观测。</td><td><code>SPOT</code> 过期进入 <code>ERROR</code>。</td><td><span class="tag preview">preview</span></td></tr>
+            <tr><td><code>A4_DETECT</code></td><td>发送 <code>MODE,A4GRAY</code>，等待稳定 A4 候选。</td><td>A4 检测总等待 <code>3000~5000ms</code>。</td><td><span class="tag preview">preview</span></td></tr>
+            <tr><td><code>A4_READY</code></td><td>发送 <code>LOCK_A4</code>；收到 <code>A4_LOCKED</code> 后发送 <code>ACK,A4_LOCKED</code> 并锁存路径。</td><td><code>A4_LOCKED</code> 可每 <code>100ms</code> 重发，最多 <code>5</code> 次。</td><td><span class="tag preview">preview</span></td></tr>
+            <tr><td><code>A4_RUN</code></td><td>切回 <code>MODE,SPOT640</code>；TI 用已锁存 A4 路径运行，长期接收 <code>SPOT</code>。</td><td><code>SPOT</code> 过期进入 <code>ERROR</code>。</td><td><span class="tag preview">preview</span></td></tr>
+            <tr><td><code>PAUSED/DONE/ERROR</code></td><td>TI 先制动，再发送 <code>STOP</code> 或保留低频 <code>STATUS</code>。</td><td>制动不等待视觉 ACK。</td><td><span class="tag preview">preview</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="keys">
+      <div class="section-head">
+        <h2>按键</h2>
+        <p>三键输入统一进入主状态机；<code>K1</code> 按短按和长按区分。</p>
+      </div>
+      <div class="keys">
+        <div class="key"><h3><code>IDLE</code></h3><ul><li><code>K1</code> 短按保持停止或清错。</li><li><code>K1</code> 长按进入 <code>RESET_RUN</code>。</li><li><code>K2</code> 启动当前模式。</li><li><code>K3</code> 切换模式。</li></ul></div>
+        <div class="key"><h3><code>CALIB_SCREEN</code></h3><ul><li><code>K1</code> 短按放弃本轮标定。</li><li><code>K2</code> 保存当前点。</li><li><code>K3</code> 切换当前选择项。</li></ul></div>
+        <div class="key"><h3>运行态</h3><ul><li><code>K1</code> 短按立即暂停并制动。</li><li><code>K1</code> 长按转入复位。</li><li><code>K2</code> 无动作或现场确认。</li><li><code>K3</code> 无动作。</li></ul></div>
+        <div class="key"><h3><code>PAUSED</code></h3><ul><li><code>K1</code> 短按放弃任务。</li><li><code>K1</code> 长按转入复位。</li><li><code>K2</code> 恢复运行。</li><li><code>K3</code> 无动作。</li></ul></div>
+      </div>
+    </section>
+  </main>
+</body>
+</html>
