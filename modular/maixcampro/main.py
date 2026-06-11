@@ -6,7 +6,7 @@ import vision_spot  # 导入红色激光点检测模块。
 
 VISION_IDLE = "VISION_IDLE"  # 定义视觉空闲状态。
 VISION_SPOT640 = "VISION_SPOT640"  # 定义 640x480 RGB888 红点检测状态。
-VISION_A4GRAY = "VISION_A4GRAY"  # 定义 320x240 灰度 A4 检测状态。
+VISION_A4GRAY = "VISION_A4GRAY"  # 定义 640x480 A4 黑框检测状态。
 VISION_A4_LOCKED = "VISION_A4_LOCKED"  # 定义 A4 结果锁存交付状态。
 VISION_ERROR = "VISION_ERROR"  # 定义视觉错误状态。
 
@@ -129,7 +129,7 @@ def handle_mode(seq, mode):  # 处理 MODE 命令。
     elif mode == "A4GRAY":  # 判断是否切换到 A4 灰度模式。
         vision_a4.reset()  # 重置 A4 多帧稳定判定。
         reset_a4_result()  # 清空旧 A4 角点和置信度。
-        reset_frame_timing()  # 重置帧率统计以适配 320x240 A4 模式。
+        reset_frame_timing()  # 重置帧率统计以适配 640x480 A4 模式。
         enter_state(VISION_A4GRAY)  # 进入 A4 灰度检测状态。
         send_ack(seq, "MODE", 1, ERR_NONE)  # 回复 MODE 成功。
     else:  # 处理未知模式。
@@ -277,6 +277,7 @@ def poll_outputs(current_ms):  # 根据当前状态发送周期输出。
         send_spot(g_seq)  # 发送当前红点结果。
     if g_locked_active and elapsed_ms(g_last_locked_ms, current_ms) >= config.A4_LOCKED_RESEND_MS:  # 判断是否需要重发 A4_LOCKED。
         if g_locked_retry_count >= config.A4_LOCKED_MAX_RETRY:  # 判断是否已经超过最大重发次数。
+            set_a4_result(g_a4_valid, g_a4_points, g_a4_angle10, g_a4_conf, ERR_LOCK_TIMEOUT)  # 记录锁存超时错误，确保 STATUS 能带出 err=5。
             enter_state(VISION_ERROR)  # 进入视觉错误状态。
             send_err(g_seq, ERR_LOCK_TIMEOUT)  # 发送锁存超时错误。
         else:  # 处理仍可重发的情况。

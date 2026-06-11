@@ -194,13 +194,56 @@ def order_corners(points):  # 将四角点统一为左上附近起点的顺时�
             best_value = value  # 更新最优判定值。
     return ordered[start_index:] + ordered[:start_index]  # 返回从左上附近开始的顺时针角点。
 
-def centerline_points(outer, inner):  # 根据外框和内孔角点计算黑胶带中心线。
+def average_centerline_points(outer, inner):  # 用角点平均方式计算黑胶带中心线兜底结果。
     points = []  # 创建中心线角点列表。
     for index in range(4):  # 遍历四个对应角点。
         x = (outer[index][0] + inner[index][0]) / 2.0  # 计算中心线 X 坐标。
         y = (outer[index][1] + inner[index][1]) / 2.0  # 计算中心线 Y 坐标。
         points.append([x, y])  # 保存中心线角点。
     return points  # 返回中心线四角点。
+
+def edge_midline(outer0, outer1, inner0, inner1):  # 根据一组内外对应边计算黑胶带边线中线。
+    odx = outer1[0] - outer0[0]  # 计算外框边 X 方向。
+    ody = outer1[1] - outer0[1]  # 计算外框边 Y 方向。
+    ilen = distance(inner0, inner1)  # 计算内框边长度。
+    olen = distance(outer0, outer1)  # 计算外框边长度。
+    if olen <= 0 or ilen <= 0:  # 判断内外边是否退化。
+        return None  # 退化边无法计算中线。
+    oux = odx / olen  # 计算外框边单位方向 X。
+    ouy = ody / olen  # 计算外框边单位方向 Y。
+    iux = (inner1[0] - inner0[0]) / ilen  # 计算内框边单位方向 X。
+    iuy = (inner1[1] - inner0[1]) / ilen  # 计算内框边单位方向 Y。
+    if oux * iux + ouy * iuy < 0:  # 判断内外边方向是否相反。
+        iux = -iux  # 翻转内框边单位方向 X。
+        iuy = -iuy  # 翻转内框边单位方向 Y。
+    dx = oux + iux  # 计算内外边平均方向 X。
+    dy = ouy + iuy  # 计算内外边平均方向 Y。
+    length = math.sqrt(dx * dx + dy * dy)  # 计算平均方向长度。
+    if length <= 0:  # 判断平均方向是否退化。
+        dx = oux  # 退化时使用外框边方向 X。
+        dy = ouy  # 退化时使用外框边方向 Y。
+    else:  # 处理平均方向正常的情况。
+        dx = dx / length  # 归一化中线方向 X。
+        dy = dy / length  # 归一化中线方向 Y。
+    mx = (outer0[0] + outer1[0] + inner0[0] + inner1[0]) / 4.0  # 计算中线经过点 X。
+    my = (outer0[1] + outer1[1] + inner0[1] + inner1[1]) / 4.0  # 计算中线经过点 Y。
+    return [mx, my, dx, dy]  # 返回中线经过点和单位方向。
+
+def centerline_points(outer, inner):  # 根据内外框对应边线计算黑胶带中心线。
+    lines = []  # 创建四条黑胶带中线列表。
+    for index in range(4):  # 遍历上右下左四组对应边。
+        line = edge_midline(outer[index], outer[(index + 1) % 4], inner[index], inner[(index + 1) % 4])  # 计算当前边的中线。
+        if line is None:  # 判断当前中线是否计算失败。
+            return average_centerline_points(outer, inner)  # 失败时回退旧的角点平均结果。
+        lines.append(line)  # 保存当前边线中线。
+    center = []  # 创建中线交点角点列表。
+    pairs = [(3, 0), (0, 1), (1, 2), (2, 3)]  # 定义左上、右上、右下、左下对应的相邻中线组合。
+    for left_index, right_index in pairs:  # 遍历四个中心线角点。
+        point = line_intersection(lines[left_index], lines[right_index])  # 计算相邻两条中线交点。
+        if point is None:  # 判断中线交点是否失败。
+            return average_centerline_points(outer, inner)  # 失败时回退旧的角点平均结果。
+        center.append(point)  # 保存当前中心线角点。
+    return order_corners(center)  # 返回统一顺序后的中心线四角点。
 
 def flatten_points(points):  # 把四个点压平成协议使用的一维整数列表。
     flat = []  # 创建协议坐标列表。
@@ -363,7 +406,6 @@ def draw_points(img, points, color):  # 在 overlay 中绘制中心线角点。
         img.draw_rect(int(point[0] * scale_x) - half, int(point[1] * scale_y) - half, half * 2, half * 2, color)  # 绘制缩放后的当前角点小方框。
 
 def draw_overlay(img, result, frame_id, fps10, latency_ms):  # 绘制 A4 黑框检测调试叠加信息。
-    draw_poly(img, result["outer_coarse"], image.COLOR_YELLOW)  # 绘制外框粗四边形，用于对比精修是否把边线拉偏。
     draw_poly(img, result["outer"], image.COLOR_BLUE)  # 绘制黑胶带外边界候选。
     draw_poly(img, result["inner"], image.COLOR_GREEN)  # 绘制黑胶带内孔边界候选。
     draw_poly(img, result["center"], image.COLOR_RED)  # 绘制黑胶带中心线四边形。
