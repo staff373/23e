@@ -107,6 +107,11 @@
       background: rgba(36, 84, 104, 0.08);
     }
 
+    .implemented {
+      color: #286140;
+      background: rgba(40, 97, 64, 0.08);
+    }
+
     .unknown {
       color: var(--amber);
       background: rgba(146, 97, 0, 0.08);
@@ -304,7 +309,7 @@
     <div class="hero">
       <p class="eyebrow">State Machine Preview</p>
       <h1>红色系统状态机预览</h1>
-      <p class="summary">红色激光系统当前状态机预览，状态标记均为 <span class="tag preview">preview</span>；依据为 <code>PROJECT.md</code>。</p>
+      <p class="summary">红色激光系统当前状态机预览，状态标记包含 <span class="tag preview">preview</span> 和 <span class="tag implemented">implemented</span>；依据为 <code>PROJECT.md</code>。</p>
     </div>
     <nav aria-label="状态机预览目录">
       <div class="nav-inner">
@@ -331,7 +336,7 @@
           <tbody>
             <tr><td>范围</td><td>启动屏幕标定、红色复位、屏幕正方形边线、A4 靶纸边线、旋转 A4 靶纸边线。</td></tr>
             <tr><td>依据</td><td><code>PROJECT.md</code> 中的项目地图、状态机总览、接入规则和题目验证指标。</td></tr>
-            <tr><td>状态</td><td><span class="tag preview">preview</span> 表示实现前契约；<span class="tag unknown">unknown</span> 表示源码或硬件信息未确认。</td></tr>
+            <tr><td>状态</td><td><span class="tag preview">preview</span> 表示实现前契约；<span class="tag implemented">implemented</span> 表示当前源码已有对应初版实现；<span class="tag unknown">unknown</span> 表示源码或硬件信息未确认。</td></tr>
           </tbody>
         </table>
       </div>
@@ -446,10 +451,10 @@
         <table>
           <thead><tr><th>状态</th><th>职责</th><th>进入/退出</th><th>标记</th></tr></thead>
           <tbody>
-            <tr><td><code>VISION_IDLE</code></td><td>等待 TI 请求，不把旧结果作为当前有效结果。</td><td>收到 <code>MODE,SPOT640</code> 进入 <code>VISION_SPOT640</code>；收到 <code>MODE,A4GRAY</code> 进入 <code>VISION_A4GRAY</code>。</td><td><span class="tag preview">preview</span></td></tr>
-            <tr><td><code>VISION_SPOT640</code></td><td>使用 <code>640x480 RGB888</code> 检测红色激光点，长期发送 <code>SPOT</code>。</td><td>收到 <code>MODE,A4GRAY</code> 切换 A4 检测；收到 <code>STOP</code> 回 <code>VISION_IDLE</code>；检测异常进入 <code>VISION_ERROR</code>。</td><td><span class="tag preview">preview</span></td></tr>
-            <tr><td><code>VISION_A4GRAY</code></td><td>使用 <code>320x240 grayscale</code> 检测 A4 黑色电工胶带，过滤不稳定候选。</td><td>收到 <code>LOCK_A4</code> 且结果稳定进入 <code>VISION_A4_LOCKED</code>；超时或低置信进入 <code>VISION_ERROR</code>。</td><td><span class="tag preview">preview</span></td></tr>
-            <tr><td><code>VISION_A4_LOCKED</code></td><td>锁存 A4 黑胶带中心线四角点、角度、置信度和帧号。</td><td>发送 <code>A4_LOCKED</code>，直到收到 <code>ACK,A4_LOCKED</code>、收到新模式命令或重发次数用尽。</td><td><span class="tag preview">preview</span></td></tr>
+            <tr><td><code>VISION_IDLE</code></td><td>等待 TI 请求，不把旧结果作为当前有效结果。</td><td>收到 <code>MODE,SPOT640</code> 进入 <code>VISION_SPOT640</code>；收到 <code>MODE,A4GRAY</code> 进入 <code>VISION_A4GRAY</code>。</td><td><span class="tag implemented">implemented</span></td></tr>
+            <tr><td><code>VISION_SPOT640</code></td><td>使用 <code>640x480 RGB888</code> 检测红色激光点，长期发送 <code>SPOT</code>。</td><td>收到 <code>MODE,A4GRAY</code> 切换 A4 检测；收到 <code>STOP</code> 回 <code>VISION_IDLE</code>；检测异常进入 <code>VISION_ERROR</code>。</td><td><span class="tag implemented">implemented</span></td></tr>
+            <tr><td><code>VISION_A4GRAY</code></td><td>固定采集 <code>640x480</code>，A4 测试版直接在 <code>640x480</code> 检测 A4 黑色电工胶带闭合框，通过外框/内孔轮廓和边线精修恢复中心线四角点并过滤不稳定候选。</td><td>收到 <code>LOCK_A4</code> 且结果稳定进入 <code>VISION_A4_LOCKED</code>；未稳定时返回 <code>ERR_A4_NOT_READY</code>。</td><td><span class="tag implemented">implemented</span></td></tr>
+            <tr><td><code>VISION_A4_LOCKED</code></td><td>锁存 A4 黑胶带中心线四角点、角度、置信度和帧号。</td><td>发送 <code>A4_LOCKED</code>，直到收到 <code>ACK,A4_LOCKED</code>、收到新模式命令或重发次数用尽。</td><td><span class="tag implemented">implemented</span></td></tr>
             <tr><td><code>VISION_ERROR</code></td><td>记录红点无效、无 A4、低置信、通信或处理异常。</td><td>收到新 <code>MODE</code> 或 <code>STOP</code> 后清理并切换状态。</td><td><span class="tag preview">preview</span></td></tr>
           </tbody>
         </table>
@@ -479,7 +484,7 @@
           <tbody>
             <tr><td>TI-&gt;MaixCAM</td><td><code>&gt;T,seq,PING</code></td><td>确认视觉模块在线。</td><td><span class="tag preview">preview</span></td></tr>
             <tr><td>TI-&gt;MaixCAM</td><td><code>&gt;T,seq,MODE,SPOT640</code></td><td>进入 <code>640x480 RGB888</code> 红点检测，持续上报 <code>SPOT</code>。</td><td><span class="tag preview">preview</span></td></tr>
-            <tr><td>TI-&gt;MaixCAM</td><td><code>&gt;T,seq,MODE,A4GRAY</code></td><td>进入 <code>320x240 grayscale</code> A4 黑胶带检测。</td><td><span class="tag preview">preview</span></td></tr>
+            <tr><td>TI-&gt;MaixCAM</td><td><code>&gt;T,seq,MODE,A4GRAY</code></td><td>进入 <code>640x480</code> A4 黑胶带检测测试版。</td><td><span class="tag preview">preview</span></td></tr>
             <tr><td>TI-&gt;MaixCAM</td><td><code>&gt;T,seq,LOCK_A4</code></td><td>要求锁存当前稳定 A4 结果。</td><td><span class="tag preview">preview</span></td></tr>
             <tr><td>TI-&gt;MaixCAM</td><td><code>&gt;T,seq,ACK,A4_LOCKED</code></td><td>确认 TI 已收到并锁存 A4 角点。</td><td><span class="tag preview">preview</span></td></tr>
             <tr><td>TI-&gt;MaixCAM</td><td><code>&gt;T,seq,STOP</code></td><td>停止本轮检测或停止重复发送一次性结果。</td><td><span class="tag preview">preview</span></td></tr>
