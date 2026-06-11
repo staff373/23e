@@ -32,7 +32,7 @@
 - TI Init order：TBD，待固件工程建立。
 - TI Main loop/task order：TBD，待固件工程建立。
 - MaixCAM Init order：`main.py` 启动后打印启动标识，复用 A19/A18 为 UART1，打开 `/dev/ttyS1`，初始化时间戳，并发送一帧 `STATUS`。
-- MaixCAM Main loop order：轮询 UART 命令；`VISION_SPOT640` 和 `VISION_A4GRAY` 都读取固定 640x480 相机帧；红点模式直接输出 640x480 坐标，A4 测试版直接在 640x480 上更新 A4 锁存候选；最后按周期输出 `STATUS`、`SPOT` 或锁存重发包。
+- MaixCAM Main loop order：轮询 UART 命令；`VISION_SPOT640` 和 `VISION_A4GRAY` 都读取固定 640x480 相机帧；红点模式直接输出 640x480 坐标并可叠加上一次锁存 A4 红框，A4 测试版直接在 640x480 上更新 A4 锁存候选；最后按周期输出 `STATUS`、`SPOT` 或锁存重发包。
 - MaixCAM camera/display：当前固定使用 `camera.Camera(640, 480, fps=60)` 和 `display.Display()`；不在 `SPOT640/A4GRAY` 模式切换时重建相机，避免板端 MMF 重新初始化后读帧超时。
 - 重要 callback/interrupt dispatch：TBD，待 TI 固件工程建立；MaixCAM 当前使用主循环轮询，不承载运动控制中断逻辑。
 
@@ -42,7 +42,7 @@
 - `vision_app`：MaixCAM-Pro 侧维护 `VISION_IDLE/VISION_SPOT640/VISION_A4GRAY/VISION_A4_LOCKED/VISION_ERROR`；当前启动默认进入 `VISION_SPOT640`。
 - `VISION_SPOT640`：已实现红点坐标流，输出 `SPOT,frame,640,480,valid,x,y,conf,lat,err`；板端 overlay 显示 `frame_id/fps10/latency/valid/conf/core/ROI`。
 - `VISION_A4GRAY`：已接入 A4 黑胶带闭合框检测测试版；固定采集 640x480，直接在 640x480 上通过黑色二值化、外框/内孔轮廓、边线精修和多帧稳定判定更新 `g_a4_valid/g_a4_points/g_a4_angle10/g_a4_conf/g_a4_err`。
-- `VISION_A4_LOCKED`：锁存重发和 `ACK,A4_LOCKED` 回收逻辑已实现；A4 候选未稳定时，`LOCK_A4` 会返回 `ERR_A4_NOT_READY`。
+- `VISION_A4_LOCKED`：锁存重发和 `ACK,A4_LOCKED` 回收逻辑已实现；确认后进入 `VISION_IDLE` 等待 TI 后续 `MODE,SPOT640`，已锁存红框保留到下一次 `MODE,A4GRAY`；A4 候选未稳定时，`LOCK_A4` 会返回 `ERR_A4_NOT_READY`。
 
 ## 接入规则
 - 推荐把比赛行为放在 app 层状态机：启动标定、复位、跑边线、跑 A4 靶纸、旋转靶纸、追踪、暂停、声光提示都应有明确状态和超时条件。

@@ -452,9 +452,9 @@
           <thead><tr><th>状态</th><th>职责</th><th>进入/退出</th><th>标记</th></tr></thead>
           <tbody>
             <tr><td><code>VISION_IDLE</code></td><td>等待 TI 请求，不把旧结果作为当前有效结果。</td><td>收到 <code>MODE,SPOT640</code> 进入 <code>VISION_SPOT640</code>；收到 <code>MODE,A4GRAY</code> 进入 <code>VISION_A4GRAY</code>。</td><td><span class="tag implemented">implemented</span></td></tr>
-            <tr><td><code>VISION_SPOT640</code></td><td>使用 <code>640x480 RGB888</code> 检测红色激光点，长期发送 <code>SPOT</code>。</td><td>收到 <code>MODE,A4GRAY</code> 切换 A4 检测；收到 <code>STOP</code> 回 <code>VISION_IDLE</code>；检测异常进入 <code>VISION_ERROR</code>。</td><td><span class="tag implemented">implemented</span></td></tr>
+            <tr><td><code>VISION_SPOT640</code></td><td>使用 <code>640x480 RGB888</code> 检测红色激光点，长期发送 <code>SPOT</code>，并可叠加上一次锁存的 A4 红色中心框。</td><td>收到 <code>MODE,A4GRAY</code> 切换 A4 检测并清除旧锁存红框；收到 <code>STOP</code> 回 <code>VISION_IDLE</code>；检测异常进入 <code>VISION_ERROR</code>。</td><td><span class="tag implemented">implemented</span></td></tr>
             <tr><td><code>VISION_A4GRAY</code></td><td>固定采集 <code>640x480</code>，A4 测试版直接在 <code>640x480</code> 检测 A4 黑色电工胶带闭合框，通过外框/内孔轮廓和边线精修恢复中心线四角点并过滤不稳定候选。</td><td>收到 <code>LOCK_A4</code> 且结果稳定进入 <code>VISION_A4_LOCKED</code>；未稳定时返回 <code>ERR_A4_NOT_READY</code>。</td><td><span class="tag implemented">implemented</span></td></tr>
-            <tr><td><code>VISION_A4_LOCKED</code></td><td>锁存 A4 黑胶带中心线四角点、角度、置信度和帧号。</td><td>发送 <code>A4_LOCKED</code>，直到收到 <code>ACK,A4_LOCKED</code>、收到新模式命令或重发次数用尽。</td><td><span class="tag implemented">implemented</span></td></tr>
+            <tr><td><code>VISION_A4_LOCKED</code></td><td>锁存 A4 黑胶带中心线四角点、角度、置信度和帧号，并保存红色中心框 overlay。</td><td>发送 <code>A4_LOCKED</code>，直到收到 <code>ACK,A4_LOCKED</code> 后回到 <code>VISION_IDLE</code> 等待后续模式、收到新模式命令或重发次数用尽。</td><td><span class="tag implemented">implemented</span></td></tr>
             <tr><td><code>VISION_ERROR</code></td><td>记录红点无效、无 A4、低置信、通信或处理异常。</td><td>收到新 <code>MODE</code> 或 <code>STOP</code> 后清理并切换状态。</td><td><span class="tag preview">preview</span></td></tr>
           </tbody>
         </table>
@@ -506,7 +506,7 @@
             <tr><td><code>RESET_RUN</code></td><td>保持 <code>SPOT640</code>；TI 用 <code>SPOT</code> 与已保存 <code>P0</code> 做复位观测或闭环。</td><td><code>SPOT</code> 过期进入 <code>ERROR</code>。</td><td><span class="tag preview">preview</span></td></tr>
             <tr><td><code>SQUARE_RUN</code></td><td>保持 <code>SPOT640</code>；TI 用 <code>P1~P4</code> 跑边线，并用红点坐标纠偏或观测。</td><td><code>SPOT</code> 过期进入 <code>ERROR</code>。</td><td><span class="tag preview">preview</span></td></tr>
             <tr><td><code>A4_DETECT</code></td><td>发送 <code>MODE,A4GRAY</code>，等待稳定 A4 候选。</td><td>A4 检测总等待 <code>3000~5000ms</code>。</td><td><span class="tag preview">preview</span></td></tr>
-            <tr><td><code>A4_READY</code></td><td>发送 <code>LOCK_A4</code>；收到 <code>A4_LOCKED</code> 后发送 <code>ACK,A4_LOCKED</code> 并锁存路径。</td><td><code>A4_LOCKED</code> 可每 <code>100ms</code> 重发，最多 <code>5</code> 次。</td><td><span class="tag preview">preview</span></td></tr>
+            <tr><td><code>A4_READY</code></td><td>发送 <code>LOCK_A4</code>；收到 <code>A4_LOCKED</code> 后发送 <code>ACK,A4_LOCKED</code> 并锁存路径，随后发送 <code>MODE,SPOT640</code>。</td><td><code>A4_LOCKED</code> 可每 <code>100ms</code> 重发，最多 <code>5</code> 次；锁存红框在 MaixCAM 画面保留到下一次 <code>MODE,A4GRAY</code>。</td><td><span class="tag preview">preview</span></td></tr>
             <tr><td><code>A4_RUN</code></td><td>切回 <code>MODE,SPOT640</code>；TI 用已锁存 A4 路径运行，长期接收 <code>SPOT</code>。</td><td><code>SPOT</code> 过期进入 <code>ERROR</code>。</td><td><span class="tag preview">preview</span></td></tr>
             <tr><td><code>PAUSED/DONE/ERROR</code></td><td>TI 先制动，再发送 <code>STOP</code> 或保留低频 <code>STATUS</code>。</td><td>制动不等待视觉 ACK。</td><td><span class="tag preview">preview</span></td></tr>
           </tbody>

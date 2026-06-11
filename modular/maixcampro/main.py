@@ -46,6 +46,7 @@ g_a4_points = [0, 0, 0, 0, 0, 0, 0, 0]  # 保存 A4 中心线四角点坐标。
 g_a4_angle10 = 0  # 保存 A4 角度，单位为 0.1 度。
 g_a4_conf = 0  # 保存 A4 检测置信度。
 g_a4_err = ERR_NONE  # 保存 A4 检测错误码。
+g_locked_a4_overlay_points = None  # 保存已锁存 A4 红框 overlay，直到下一次 A4 检测开始。
 
 def now_ms():  # 获取当前毫秒时间。
     return time.ticks_ms()  # 返回 MaixPy 毫秒计数。
@@ -102,6 +103,19 @@ def set_a4_result(valid, points, angle10, conf, err_code):  # 给后续 A4 算�
 def reset_a4_result():  # 清空 A4 检测结果，避免模式切换后锁存旧角点。
     set_a4_result(0, [0, 0, 0, 0, 0, 0, 0, 0], 0, 0, ERR_NONE)  # 写入无效 A4 结果。
 
+def save_locked_a4_overlay():  # 保存当前锁存 A4 红框用于后续显示保留。
+    global g_locked_a4_overlay_points  # 声明要修改锁存红框 overlay 角点。
+    g_locked_a4_overlay_points = list(g_a4_points)  # 复制当前稳定 A4 中心线角点，避免后续结果清空影响显示。
+
+def clear_locked_a4_overlay():  # 清除旧的锁存 A4 红框 overlay。
+    global g_locked_a4_overlay_points  # 声明要修改锁存红框 overlay 角点。
+    g_locked_a4_overlay_points = None  # 下一次黑框检测开始时清除旧红框。
+
+def draw_locked_a4_overlay(img):  # 在当前画面上叠加已锁存 A4 红框。
+    if g_locked_a4_overlay_points is None:  # 判断当前是否没有需要保留的锁存红框。
+        return  # 没有锁存红框时不绘制。
+    vision_a4.draw_locked_overlay(img, g_locked_a4_overlay_points)  # 绘制上一次锁存的 A4 中心线红框。
+
 def reset_frame_timing():  # 重置相机帧率统计，避免模式切换污染 FPS。
     global g_last_frame_ms, g_fps10  # 声明要修改上一帧时间和 FPS 观测值。
     g_last_frame_ms = 0  # 清空上一帧相机时间。
@@ -127,6 +141,7 @@ def handle_mode(seq, mode):  # 处理 MODE 命令。
         enter_state(VISION_SPOT640)  # 进入红点坐标流状态。
         send_ack(seq, "MODE", 1, ERR_NONE)  # 回复 MODE 成功。
     elif mode == "A4GRAY":  # 判断是否切换到 A4 灰度模式。
+        clear_locked_a4_overlay()  # 开始下一次黑框检测时清除上一次锁存红框。
         vision_a4.reset()  # 重置 A4 多帧稳定判定。
         reset_a4_result()  # 清空旧 A4 角点和置信度。
         reset_frame_timing()  # 重置帧率统计以适配 640x480 A4 模式。
@@ -144,6 +159,7 @@ def handle_lock_a4(seq):  # 处理 LOCK_A4 命令。
         send_ack(seq, "LOCK_A4", 0, ERR_A4_NOT_READY)  # 回复 A4 当前不可锁存。
         send_err(seq, ERR_A4_NOT_READY)  # 同步发送错误码。
         return  # 结束 LOCK_A4 处理。
+    save_locked_a4_overlay()  # 保存锁存红框，供后续红点画面持续显示到下一次黑框检测。
     enter_state(VISION_A4_LOCKED)  # 进入 A4 锁存交付状态。
     g_locked_active = True  # 打开 A4_LOCKED 重发等待。
     g_locked_retry_count = 0  # 清零 A4_LOCKED 重发次数。
@@ -152,7 +168,7 @@ def handle_lock_a4(seq):  # 处理 LOCK_A4 命令。
 
 def handle_ack(seq, target):  # 处理 TI 的 ACK 命令。
     if target == "A4_LOCKED":  # 判断 TI 是否确认 A4_LOCKED。
-        enter_state(VISION_A4GRAY)  # 回到 A4 灰度状态等待后续 MODE。
+        enter_state(VISION_IDLE)  # 停止继续检测黑框，等待 TI 后续 MODE 命令。
         send_ack(seq, "ACK", 1, ERR_NONE)  # 回复 ACK 命令成功。
     else:  # 处理未知 ACK 目标。
         send_ack(seq, "ACK", 0, ERR_BAD_CMD)  # 回复 ACK 命令失败。
@@ -248,6 +264,7 @@ def update_spot_frame(frame_start_ms):  # 读取并处理一帧红点图像。
     set_spot_result(result["valid"], result["x"], result["y"], result["conf"], result["err"])  # 更新协议侧红点结果。
     if g_frame_id % config.DEBUG_RENDER_EVERY == 0:  # 判断是否到达调试画面刷新帧。
         vision_spot.draw_overlay(img, result, g_frame_id, g_fps10, g_last_latency_ms)  # 绘制红点检测调试信息。
+        draw_locked_a4_overlay(img)  # 在红点画面上保留上一次锁存的 A4 红框。
         g_display.show(img)  # 显示调试画面。
 
 def update_a4_frame(frame_start_ms):  # 读取并处理一帧 A4 黑框图像。

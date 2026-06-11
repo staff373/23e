@@ -405,6 +405,13 @@ def draw_points(img, points, color):  # 在 overlay 中绘制中心线角点。
     for point in points:  # 遍历所有角点。
         img.draw_rect(int(point[0] * scale_x) - half, int(point[1] * scale_y) - half, half * 2, half * 2, color)  # 绘制缩放后的当前角点小方框。
 
+def draw_locked_overlay(img, flat_points):  # 绘制已锁存 A4 中心线红框。
+    if not flat_points or len(flat_points) < 8:  # 判断是否没有完整的锁存角点。
+        return  # 没有锁存角点时不绘制。
+    points = flat_to_points(flat_points)  # 将协议一维角点转换为 overlay 二维角点。
+    draw_poly(img, points, image.COLOR_RED)  # 绘制锁存 A4 中心线红框。
+    draw_points(img, points, image.COLOR_RED)  # 绘制锁存 A4 中心线角点。
+
 def draw_overlay(img, result, frame_id, fps10, latency_ms):  # 绘制 A4 黑框检测调试叠加信息。
     draw_poly(img, result["outer"], image.COLOR_BLUE)  # 绘制黑胶带外边界候选。
     draw_poly(img, result["inner"], image.COLOR_GREEN)  # 绘制黑胶带内孔边界候选。
