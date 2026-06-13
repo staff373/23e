@@ -1,0 +1,794 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>绿色系统状态机预览</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f7f3ea;
+      --paper: #fffaf0;
+      --ink: #171512;
+      --muted: #6e665d;
+      --line: #d9cdbc;
+      --strong: #24201b;
+      --red: #b5222f;
+      --green: #286140;
+      --blue: #245468;
+      --amber: #926100;
+      --code: #f0e6d4;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      margin: 0;
+      background:
+        repeating-linear-gradient(0deg, transparent 0 31px, rgba(23, 21, 18, 0.04) 31px 32px),
+        var(--bg);
+      color: var(--ink);
+      font: 15px/1.7 "Noto Serif CJK SC", "Source Han Serif SC", SimSun, serif;
+      letter-spacing: 0;
+    }
+
+    a {
+      color: inherit;
+      text-decoration: none;
+    }
+
+    code {
+      display: inline-block;
+      max-width: 100%;
+      padding: 1px 5px;
+      border: 1px solid rgba(36, 32, 27, 0.16);
+      border-radius: 3px;
+      background: var(--code);
+      font: 0.93em/1.45 Consolas, "Cascadia Mono", monospace;
+      overflow-wrap: anywhere;
+    }
+
+    header {
+      border-bottom: 3px double var(--strong);
+      background: var(--paper);
+    }
+
+    .hero {
+      width: min(1080px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 42px 0 26px;
+    }
+
+    .eyebrow {
+      margin: 0 0 10px;
+      color: var(--blue);
+      font: 800 12px/1.2 Consolas, "Cascadia Mono", monospace;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    h1,
+    h2 {
+      margin: 0;
+      letter-spacing: 0;
+    }
+
+    h1 {
+      font-size: clamp(34px, 6vw, 72px);
+      line-height: 1.05;
+      font-weight: 900;
+    }
+
+    .summary {
+      max-width: 760px;
+      margin: 14px 0 0;
+      color: var(--muted);
+      font-size: 17px;
+    }
+
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      min-height: 24px;
+      border: 1px solid currentColor;
+      border-radius: 999px;
+      padding: 1px 8px;
+      font: 800 12px/1.3 Consolas, "Cascadia Mono", monospace;
+      white-space: nowrap;
+    }
+
+    .preview {
+      color: #245468;
+      background: rgba(36, 84, 104, 0.08);
+    }
+
+    .unknown {
+      color: var(--amber);
+      background: rgba(146, 97, 0, 0.08);
+    }
+
+    .critical {
+      color: var(--red);
+      background: rgba(177, 44, 44, 0.08);
+    }
+
+    nav {
+      border-top: 1px solid var(--line);
+      background: rgba(255, 250, 240, 0.9);
+    }
+
+    .nav-inner {
+      display: flex;
+      gap: 8px;
+      width: min(1080px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 10px 0;
+      overflow-x: auto;
+      scrollbar-width: none;
+    }
+
+    .nav-inner::-webkit-scrollbar {
+      display: none;
+    }
+
+    nav a {
+      flex: 0 0 auto;
+      border: 1px solid var(--line);
+      border-radius: 4px;
+      padding: 7px 10px;
+      background: #fff8e9;
+      font-weight: 800;
+    }
+
+    main {
+      width: min(1080px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 22px 0 48px;
+    }
+
+    section {
+      scroll-margin-top: 16px;
+      padding: 26px 0;
+      border-top: 2px solid var(--strong);
+    }
+
+    section:first-child {
+      border-top: 0;
+    }
+
+    .section-head {
+      display: grid;
+      grid-template-columns: minmax(0, 0.68fr) minmax(240px, 0.32fr);
+      gap: 18px;
+      align-items: end;
+      margin-bottom: 12px;
+    }
+
+    h2 {
+      font-size: clamp(25px, 4vw, 42px);
+      line-height: 1.08;
+      font-weight: 900;
+    }
+
+    .section-head p {
+      margin: 0;
+      color: var(--muted);
+    }
+
+    .table-wrap {
+      overflow-x: auto;
+      border-top: 2px solid var(--strong);
+      border-bottom: 2px solid var(--strong);
+      background: rgba(255, 250, 240, 0.86);
+    }
+
+    table {
+      width: 100%;
+      min-width: 720px;
+      border-collapse: collapse;
+    }
+
+    th,
+    td {
+      padding: 9px 11px;
+      border-right: 1px solid var(--line);
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+      overflow-wrap: anywhere;
+    }
+
+    th:last-child,
+    td:last-child {
+      border-right: 0;
+    }
+
+    tr:last-child td {
+      border-bottom: 0;
+    }
+
+    th {
+      background: #eadcc5;
+      font: 900 12px/1.25 Consolas, "Cascadia Mono", monospace;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .chain {
+      counter-reset: step;
+      border-top: 2px solid var(--strong);
+      border-bottom: 2px solid var(--strong);
+      background: rgba(255, 250, 240, 0.86);
+    }
+
+    .chain-row {
+      counter-increment: step;
+      display: grid;
+      grid-template-columns: 72px minmax(0, 1fr);
+      gap: 12px;
+      padding: 13px 0;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .chain-row:last-child {
+      border-bottom: 0;
+    }
+
+    .chain-row::before {
+      content: "0" counter(step);
+      padding-left: 12px;
+      color: var(--red);
+      font: 900 24px/1 Georgia, "Times New Roman", serif;
+    }
+
+    .chain-row strong {
+      display: block;
+      font: 900 16px/1.25 Consolas, "Cascadia Mono", monospace;
+    }
+
+    .chain-row p {
+      margin: 5px 12px 0 0;
+      color: var(--muted);
+    }
+
+    .status-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      border-top: 2px solid var(--strong);
+      border-bottom: 2px solid var(--strong);
+      background: rgba(255, 250, 240, 0.86);
+    }
+
+    .status-cell {
+      min-height: 92px;
+      padding: 12px;
+      border-right: 1px solid var(--line);
+    }
+
+    .status-cell:last-child {
+      border-right: 0;
+    }
+
+    .status-cell h3 {
+      margin: 0 0 8px;
+      font-size: 16px;
+    }
+
+    .status-cell p {
+      margin: 0;
+      color: var(--muted);
+    }
+
+    .runner {
+      border-top: 2px solid var(--strong);
+      border-bottom: 2px solid var(--strong);
+      background: rgba(255, 250, 240, 0.86);
+    }
+
+    .runner-top {
+      display: grid;
+      grid-template-columns: minmax(220px, 0.35fr) minmax(0, 0.65fr);
+      gap: 0;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .runner-state {
+      padding: 16px;
+      border-right: 1px solid var(--line);
+      background: rgba(255, 248, 233, 0.72);
+    }
+
+    .runner-state .label {
+      color: var(--muted);
+      font: 900 12px/1.3 Consolas, "Cascadia Mono", monospace;
+      text-transform: uppercase;
+    }
+
+    .runner-state .value {
+      margin-top: 8px;
+      color: var(--red);
+      font: 900 28px/1.1 Consolas, "Cascadia Mono", monospace;
+      overflow-wrap: anywhere;
+    }
+
+    .runner-log {
+      height: 168px;
+      margin: 0;
+      padding: 14px 16px;
+      overflow: auto;
+      color: var(--ink);
+      font: 13px/1.55 Consolas, "Cascadia Mono", monospace;
+      white-space: pre-wrap;
+    }
+
+    .runner-controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      padding: 12px;
+    }
+
+    button {
+      min-height: 36px;
+      border: 1px solid var(--strong);
+      border-radius: 4px;
+      padding: 7px 10px;
+      background: #fff8e9;
+      color: var(--ink);
+      font: 800 13px/1.2 Consolas, "Cascadia Mono", monospace;
+      cursor: pointer;
+    }
+
+    button:hover,
+    button:focus-visible {
+      background: #eadcc5;
+      outline: 2px solid rgba(36, 84, 104, 0.28);
+      outline-offset: 2px;
+    }
+
+    @media (max-width: 760px) {
+      .section-head,
+      .runner-top,
+      .status-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .runner-state,
+      .status-cell {
+        border-right: 0;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .status-cell:last-child {
+        border-bottom: 0;
+      }
+
+      h1 {
+        font-size: 34px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="hero">
+      <p class="eyebrow">State Machine Preview</p>
+      <h1>绿色系统状态机预览</h1>
+      <p class="summary">绿色激光系统当前状态机预览；依据为题面 PDF 和 <code>PROJECT.md</code>。仓库暂无固件源码，因此本页状态均为 <span class="tag preview">preview</span>，硬件未确认项标为 <span class="tag unknown">unknown</span>。</p>
+    </div>
+    <nav aria-label="状态机预览目录">
+      <div class="nav-inner">
+        <a href="#scope">范围依据</a>
+        <a href="#runtime">运行链路</a>
+        <a href="#states">主状态</a>
+        <a href="#transitions">转换覆盖</a>
+        <a href="#inputs">输入与判定</a>
+        <a href="#status">STATUS</a>
+        <a href="#api">接口</a>
+        <a href="#runner">演练</a>
+      </div>
+    </nav>
+  </header>
+
+  <main>
+    <section id="scope">
+      <div class="section-head">
+        <h2>范围依据</h2>
+        <p>只覆盖绿色光斑自动追踪子系统，不覆盖红色路径控制实现。</p>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <tbody>
+            <tr><td>比赛任务</td><td>绿色光斑独立追踪红色光斑，发射端可放在线段任意位置。</td></tr>
+            <tr><td>成功边界</td><td>启动后 <code>2s</code> 内两光斑中心距离 <code>&lt;=3cm</code>，并发出连续声光提示。</td></tr>
+            <tr><td>失败边界</td><td>启动 <code>2s</code> 后距离 <code>&gt;3cm</code> 记一次失败；连续失败 <code>3s</code> 以上为 0 分。</td></tr>
+            <tr><td>暂停边界</td><td>红色、绿色系统同时按下暂停键时，两光斑立即制动，便于测量中心距离。</td></tr>
+            <tr><td>独立性</td><td>绿色系统不得通过 UART、共享变量、共享总线、无线链路或同步线接收红色系统信息。</td></tr>
+            <tr><td>状态标记</td><td><span class="tag preview">preview</span> 表示实现前契约；<span class="tag unknown">unknown</span> 表示硬件或源码事实未确认；<span class="tag critical">critical</span> 表示比赛扣分或 0 分边界。</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="runtime">
+      <div class="section-head">
+        <h2>运行链路</h2>
+        <p><code>app_green_tracker</code> 是唯一 owner；视觉、云台、声光和按键只提供输入/输出接口。</p>
+      </div>
+      <div class="chain">
+        <div class="chain-row"><div><strong>BOOT</strong><p>初始化 app 状态，所有输出进入安全态，清除历史锁定和失败计时。</p></div></div>
+        <div class="chain-row"><div><strong>SELF_CHECK</strong><p>确认按键、云台制动、激光开关、声光输出和本地视觉/传感帧可用。</p></div></div>
+        <div class="chain-row"><div><strong>CALIBRATE</strong><p>获得屏幕尺度或像素到厘米转换；未确认硬件时该状态保持 <span class="tag unknown">unknown</span>。</p></div></div>
+        <div class="chain-row"><div><strong>IDLE</strong><p>等待一键启动；不接收红色系统信息，只保留本地观测和手动按键事件。</p></div></div>
+        <div class="chain-row"><div><strong>ACQUIRE</strong><p>在同一个 2 秒启动窗口内找到红色光斑和绿色光斑。</p></div></div>
+        <div class="chain-row"><div><strong>SEEK / LOCK</strong><p>先快速靠近，再细跟踪；误差稳定在 <code>&lt;=3cm</code> 后进入锁定并连续声光提示。</p></div></div>
+        <div class="chain-row"><div><strong>TRACK / RECOVER</strong><p>锁定后持续跟随；偏差或光斑丢失进入恢复，连续失败 <code>3s</code> 转故障。</p></div></div>
+        <div class="chain-row"><div><strong>PAUSED / ERROR</strong><p>暂停优先制动并保留测距位置；错误态安全输出并锁存原因。</p></div></div>
+      </div>
+    </section>
+
+    <section id="states">
+      <div class="section-head">
+        <h2>主状态</h2>
+        <p>状态推进由 <code>GreenTracker_Poll()</code> 完成，禁止在 ISR/HAL callback 里改业务状态。</p>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>状态</th><th>职责</th><th>进入条件</th><th>退出条件</th><th>标记</th></tr></thead>
+          <tbody>
+            <tr><td><code>BOOT</code></td><td>清状态、停云台、关闭或置安全声光，建立计时基准。</td><td>上电或软件复位。</td><td>初始化完成进入 <code>SELF_CHECK</code>；关键初始化失败进入 <code>ERROR</code>。</td><td><span class="tag preview">preview</span></td></tr>
+            <tr><td><code>SELF_CHECK</code></td><td>检查按键、云台、激光、声光、本地传感帧和参数范围。</td><td><code>BOOT</code> 完成或用户清错后重检。</td><td>依赖有效且标定有效进入 <code>IDLE</code>；需要标定进入 <code>CALIBRATE</code>；失败进入 <code>ERROR</code>。</td><td><span class="tag preview">preview</span></td></tr>
+            <tr><td><code>CALIBRATE</code></td><td>建立屏幕 ROI、像素到厘米比例、绿点可控方向和云台限位。</td><td>无有效标定或绿色发射端位置改变。</td><td>标定完成进入 <code>IDLE</code>；标定超时、尺度无效或绿点不可见进入 <code>ERROR</code>。</td><td><span class="tag unknown">unknown</span></td></tr>
+            <tr><td><code>IDLE</code></td><td>等待绿色系统一键启动，保持云台停止并低频上报状态。</td><td>自检/标定完成、停止、清错或暂停放弃。</td><td>启动键进入 <code>ACQUIRE_RED</code>；复位键回 <code>SELF_CHECK</code>；错误事件进入 <code>ERROR</code>。</td><td><span class="tag preview">preview</span></td></tr>
+            <tr><td><code>ACQUIRE_RED</code></td><td>在本地传感画面中寻找红色目标光斑。</td><td><code>GreenTracker_Start()</code> 接受启动，启动 2 秒计时开始。</td><td>红点有效进入 <code>ACQUIRE_GREEN</code>；2 秒内仍无红点进入 <code>ERROR</code>；暂停进入 <code>PAUSED</code>。</td><td><span class="tag preview">preview</span></td></tr>
+            <tr><td><code>ACQUIRE_GREEN</code></td><td>确认自身绿色光斑可见，必要时执行小幅探测扫描。</td><td>红点有效。</td><td>绿点有效进入 <code>COARSE_SEEK</code>；绿点不可见、限位或启动超时进入 <code>ERROR</code>；暂停进入 <code>PAUSED</code>。</td><td><span class="tag preview">preview</span></td></tr>
+            <tr><td><code>COARSE_SEEK</code></td><td>用快速限幅控制把绿点推向红点，优先满足 2 秒内锁定。</td><td>红点和绿点均有效。</td><td>距离接近阈值进入 <code>FINE_LOCK</code>；启动 2 秒超时且未达 <code>&lt;=3cm</code> 进入 <code>ERROR</code>；暂停进入 <code>PAUSED</code>。</td><td><span class="tag preview">preview</span></td></tr>
+            <tr><td><code>FINE_LOCK</code></td><td>低速闭环，抑制抖动并确认 <code>&lt;=3cm</code> 稳定成立。</td><td><code>COARSE_SEEK</code> 已接近红点。</td><td>稳定满足 <code>&lt;=3cm</code> 进入 <code>TRACK_LOCKED</code>；启动 2 秒超时进入 <code>ERROR</code>；丢点回对应 acquire；暂停进入 <code>PAUSED</code>。</td><td><span class="tag preview">preview</span></td></tr>
+            <tr><td><code>TRACK_LOCKED</code></td><td>持续追踪红点，连续声光提示，失败计时清零。</td><td>2 秒窗口内完成锁定，或恢复成功。</td><td>距离 <code>&gt;3cm</code>、红点/绿点过期或限位进入 <code>TRACK_RECOVER</code>；暂停进入 <code>PAUSED</code>；停止进入 <code>IDLE</code>。</td><td><span class="tag preview">preview</span></td></tr>
+            <tr><td><code>TRACK_RECOVER</code></td><td>保持追踪输出并累计连续失败时间，声光转为失锁状态。</td><td>启动 2 秒后出现 <code>&gt;3cm</code>、红点过期、绿点过期或限位保护。</td><td>恢复 <code>&lt;=3cm</code> 进入 <code>TRACK_LOCKED</code>；连续失败 <code>&gt;=3s</code> 进入 <code>ERROR</code>；暂停进入 <code>PAUSED</code>。</td><td><span class="tag critical">critical</span></td></tr>
+            <tr><td><code>PAUSED</code></td><td>立即制动并保持当前光斑位置，保留前一状态、误差和失败计时。</td><td>任意运行态收到暂停键。</td><td>恢复键回前一运行态；停止键进入 <code>IDLE</code>；复位键进入 <code>SELF_CHECK</code>。</td><td><span class="tag preview">preview</span></td></tr>
+            <tr><td><code>ERROR</code></td><td>安全输出、停止云台、锁存错误原因，声光提示错误类型。</td><td>自检、标定、启动锁定、连续失败、限位、传感或输出异常。</td><td>清错进入 <code>SELF_CHECK</code>；停止进入 <code>IDLE</code>。</td><td><span class="tag preview">preview</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="transitions">
+      <div class="section-head">
+        <h2>转换覆盖</h2>
+        <p>覆盖启动、锁定、失锁、暂停、恢复、停止和故障出口。</p>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>当前状态</th><th>事件/条件</th><th>下一状态</th><th>动作</th><th>标记</th></tr></thead>
+          <tbody>
+            <tr><td><code>BOOT</code></td><td>app 初始化完成</td><td><code>SELF_CHECK</code></td><td>停止云台，清 <code>lock_ms/fail_ms/err</code>。</td><td><span class="tag preview">preview</span></td></tr>
+            <tr><td><code>BOOT</code></td><td>初始化失败</td><td><code>ERROR</code></td><td>记录 <code>INIT_FAIL</code>。</td><td><span class="tag preview">preview</span></td></tr>
+            <tr><td><code>SELF_CHECK</code></td><td>硬件与标定有效</td><td><code>IDLE</code></td><td>置 <code>ready=1</code>，声光空闲。</td><td><span class="tag preview">preview</span></td></tr>
+            <tr><td><code>SELF_CHECK</code></td><td>硬件有效但标定缺失</td><td><code>CALIBRATE</code></td><td>准备采集尺度、ROI 和绿点方向。</td><td><span class="tag unknown">unknown</span></td></tr>
+            <tr><td><code>SELF_CHECK</code></td><td>云台、传感或声光异常</td><td><code>ERROR</code></td><td>记录 <code>SELF_CHECK_FAIL</code>。</td><td><span class="tag preview">preview</span></td></tr>
+            <tr><td><code>CALIBRATE</code></td><td>屏幕尺度、绿点方向和限位有效</td><td><code>IDLE</code></td><td>保存运行期参数，低频 STATUS 上报 <code>calib=1</code>。</td><td><span class="tag unknown">unknown</span></td></tr>
+            <tr><td><code>CALIBRATE</code></td><td>尺度无效、绿点不可见或超时</td><td><code>ERROR</code></td><td>记录 <code>CALIB_INVALID</code>。</td><td><span class="tag unknown">unknown</span></td></tr>
+            <tr><td><code>IDLE</code></td><td>启动键且 <code>ready=1</code></td><td><code>ACQUIRE_RED</code></td><td>记录 <code>start_ms</code>，打开绿色激光，启动 2 秒窗口。</td><td><span class="tag preview">preview</span></td></tr>
+            <tr><td><code>IDLE</code></td><td>启动键但未就绪</td><td><code>ERROR</code></td><td>记录 <code>NOT_READY</code>，禁止云台输出。</td><td><span class="tag preview">preview</span></td></tr>
+            <tr><td><code>ACQUIRE_RED</code></td><td>红点有效且未超 2 秒</td><td><code>ACQUIRE_GREEN</code></td><td>缓存红点坐标和帧号。</td><td><span class="tag preview">preview</span></td></tr>
+            <tr><td><code>ACQUIRE_RED</code></td><td>红点无效直到 2 秒超时</td><td><code>ERROR</code></td><td>记录 <code>TRACK_START_TIMEOUT</code> 或 <code>RED_NOT_FOUND</code>。</td><td><span class="tag critical">critical</span></td></tr>
+            <tr><td><code>ACQUIRE_GREEN</code></td><td>绿点有效且未超 2 秒</td><td><code>COARSE_SEEK</code></td><td>根据红绿误差生成限幅云台输出。</td><td><span class="tag preview">preview</span></td></tr>
+            <tr><td><code>ACQUIRE_GREEN</code></td><td>绿点无效、限位或启动超时</td><td><code>ERROR</code></td><td>记录 <code>GREEN_NOT_FOUND</code>、<code>GIMBAL_LIMIT</code> 或 <code>TRACK_START_TIMEOUT</code>。</td><td><span class="tag critical">critical</span></td></tr>
+            <tr><td><code>COARSE_SEEK</code></td><td><code>dist_cm &lt;= coarse_cm</code></td><td><code>FINE_LOCK</code></td><td>降低控制增益，转细跟踪。</td><td><span class="tag preview">preview</span></td></tr>
+            <tr><td><code>COARSE_SEEK</code></td><td><code>dist_cm &lt;=3cm</code> 且稳定</td><td><code>TRACK_LOCKED</code></td><td>打开连续声光提示，清失败计时。</td><td><span class="tag preview">preview</span></td></tr>
+            <tr><td><code>COARSE_SEEK</code></td><td>启动 2 秒超时仍未锁定</td><td><code>ERROR</code></td><td>记录 <code>TRACK_START_TIMEOUT</code>。</td><td><span class="tag critical">critical</span></td></tr>
+            <tr><td><code>FINE_LOCK</code></td><td><code>dist_cm &lt;=3cm</code> 持续满足</td><td><code>TRACK_LOCKED</code></td><td>连续声光提示，置 <code>lock_ms</code>。</td><td><span class="tag preview">preview</span></td></tr>
+            <tr><td><code>FINE_LOCK</code></td><td>丢红点或丢绿点且未超 2 秒</td><td><code>ACQUIRE_RED</code> 或 <code>ACQUIRE_GREEN</code></td><td>保持启动计时，不重置 2 秒窗口。</td><td><span class="tag preview">preview</span></td></tr>
+            <tr><td><code>FINE_LOCK</code></td><td>启动 2 秒超时仍未锁定</td><td><code>ERROR</code></td><td>记录 <code>TRACK_START_TIMEOUT</code>。</td><td><span class="tag critical">critical</span></td></tr>
+            <tr><td><code>TRACK_LOCKED</code></td><td><code>dist_cm &lt;=3cm</code> 且红绿点新鲜</td><td><code>TRACK_LOCKED</code></td><td>持续闭环，<code>fail_ms=0</code>，保持连续声光。</td><td><span class="tag preview">preview</span></td></tr>
+            <tr><td><code>TRACK_LOCKED</code></td><td><code>dist_cm &gt;3cm</code> 或任一光斑过期</td><td><code>TRACK_RECOVER</code></td><td>记录 <code>fail_start_ms</code>，声光转失锁状态。</td><td><span class="tag critical">critical</span></td></tr>
+            <tr><td><code>TRACK_RECOVER</code></td><td>恢复 <code>dist_cm &lt;=3cm</code> 且红绿点新鲜</td><td><code>TRACK_LOCKED</code></td><td>清 <code>fail_ms</code>，恢复连续声光。</td><td><span class="tag preview">preview</span></td></tr>
+            <tr><td><code>TRACK_RECOVER</code></td><td>连续失败 <code>&gt;=3000ms</code></td><td><code>ERROR</code></td><td>停止云台，记录 <code>TRACK_FAIL_3S</code>。</td><td><span class="tag critical">critical</span></td></tr>
+            <tr><td>任意运行态</td><td>暂停键</td><td><code>PAUSED</code></td><td>立即制动，保存前一状态、当前误差和失败计时。</td><td><span class="tag preview">preview</span></td></tr>
+            <tr><td><code>PAUSED</code></td><td>恢复键且依赖仍有效</td><td><code>prev_state</code></td><td>恢复云台控制；失败计时从恢复后重新评价。</td><td><span class="tag preview">preview</span></td></tr>
+            <tr><td><code>PAUSED</code></td><td>停止键</td><td><code>IDLE</code></td><td>关闭运动输出，声光空闲。</td><td><span class="tag preview">preview</span></td></tr>
+            <tr><td><code>PAUSED</code></td><td>复位键</td><td><code>SELF_CHECK</code></td><td>清运行上下文并重新自检。</td><td><span class="tag preview">preview</span></td></tr>
+            <tr><td><code>ERROR</code></td><td>清错键</td><td><code>SELF_CHECK</code></td><td>保留最近错误到 STATUS，重新检查依赖。</td><td><span class="tag preview">preview</span></td></tr>
+            <tr><td><code>ERROR</code></td><td>停止键</td><td><code>IDLE</code></td><td>保持安全输出，等待下一次启动。</td><td><span class="tag preview">preview</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="inputs">
+      <div class="section-head">
+        <h2>输入与判定</h2>
+        <p>所有判定进入 <code>GreenTracker_Poll()</code>，输入层只更新最近样本和事件位。</p>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>输入</th><th>来源</th><th>有效条件</th><th>失效出口</th><th>标记</th></tr></thead>
+          <tbody>
+            <tr><td><code>red_spot</code></td><td>绿色系统本地视觉/传感。</td><td>坐标在屏幕 ROI 内，置信度达标，样本年龄 <code>&lt;=150ms</code>。</td><td><code>ACQUIRE_RED</code> 超时或 <code>TRACK_RECOVER</code>。</td><td><span class="tag unknown">unknown</span></td></tr>
+            <tr><td><code>green_spot</code></td><td>绿色系统本地视觉/传感。</td><td>自身绿点可见，未饱和，样本年龄 <code>&lt;=150ms</code>。</td><td><code>ACQUIRE_GREEN</code> 超时或 <code>TRACK_RECOVER</code>。</td><td><span class="tag unknown">unknown</span></td></tr>
+            <tr><td><code>dist_cm10</code></td><td>红绿光斑中心距离，单位 <code>0.1cm</code>。</td><td>由有效标定把像素误差转换为厘米误差。</td><td>无尺度时不得宣称 <code>&lt;=3cm</code> 锁定。</td><td><span class="tag unknown">unknown</span></td></tr>
+            <tr><td><code>gimbal_ok</code></td><td>二维云台 driver 或运动控制层。</td><td>未触发限位、过流、输出饱和或驱动错误。</td><td><code>ERROR</code>，错误码 <code>GIMBAL_LIMIT</code> 或 <code>DRIVE_FAIL</code>。</td><td><span class="tag preview">preview</span></td></tr>
+            <tr><td><code>pause_event</code></td><td>绿色系统暂停键。</td><td>去抖后短按或外部暂停输入。</td><td>任意运行态立即进入 <code>PAUSED</code>。</td><td><span class="tag preview">preview</span></td></tr>
+            <tr><td><code>elapsed_ms</code></td><td><code>HAL_GetTick()</code> 或等价系统 tick。</td><td>使用无符号差值计算，禁止阻塞等待。</td><td>启动 <code>2000ms</code> 和连续失败 <code>3000ms</code>。</td><td><span class="tag preview">preview</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="status">
+      <div class="section-head">
+        <h2>STATUS</h2>
+        <p>串口或调试口的最小观测字段，能定位是否卡在视觉、云台、锁定或失败计时。</p>
+      </div>
+      <div class="status-grid">
+        <div class="status-cell">
+          <h3>状态</h3>
+          <p><code>state</code>、<code>prev</code>、<code>err</code>、<code>elapsed_ms</code></p>
+        </div>
+        <div class="status-cell">
+          <h3>光斑</h3>
+          <p><code>red_valid</code>、<code>green_valid</code>、<code>dist_cm10</code>、<code>frame_age</code></p>
+        </div>
+        <div class="status-cell">
+          <h3>追踪</h3>
+          <p><code>lock_ms</code>、<code>fail_ms</code>、<code>start_deadline_ms</code>、<code>recover_ms</code></p>
+        </div>
+        <div class="status-cell">
+          <h3>输出</h3>
+          <p><code>pan_pwm</code>、<code>tilt_pwm</code>、<code>brake</code>、<code>buzzer</code>、<code>led</code></p>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <tbody>
+            <tr><td>示例</td><td><code>OK GREEN state=TRACK_LOCKED red=1 green=1 dist_cm10=24 lock_ms=860 fail_ms=0 elapsed=1460 buzzer=ON led=ON err=0</code></td></tr>
+            <tr><td>失锁示例</td><td><code>OK GREEN state=TRACK_RECOVER red=1 green=1 dist_cm10=42 lock_ms=3310 fail_ms=620 elapsed=5140 buzzer=LOSS led=BLINK err=DIST_GT_3CM</code></td></tr>
+            <tr><td>故障示例</td><td><code>ERR GREEN state=ERROR red=1 green=1 dist_cm10=57 lock_ms=3310 fail_ms=3000 elapsed=7520 buzzer=FAULT led=FAULT err=TRACK_FAIL_3S</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="api">
+      <div class="section-head">
+        <h2>接口</h2>
+        <p>公开 API 只暴露启动、暂停、停止、状态和参数；命令层不直接改私有状态。</p>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>API</th><th>职责</th><th>标记</th></tr></thead>
+          <tbody>
+            <tr><td><code>void GreenTracker_Init(void)</code></td><td>初始化状态机变量，不重复初始化外设。</td><td><span class="tag preview">preview</span></td></tr>
+            <tr><td><code>void GreenTracker_Poll(void)</code></td><td>唯一状态推进入口，处理计时、转移、输出和错误锁存。</td><td><span class="tag preview">preview</span></td></tr>
+            <tr><td><code>uint8_t GreenTracker_Start(void)</code></td><td>从 <code>IDLE</code> 接受启动，启动 2 秒锁定窗口。</td><td><span class="tag preview">preview</span></td></tr>
+            <tr><td><code>void GreenTracker_Pause(void)</code></td><td>立即制动并进入 <code>PAUSED</code>。</td><td><span class="tag preview">preview</span></td></tr>
+            <tr><td><code>uint8_t GreenTracker_Resume(void)</code></td><td>从 <code>PAUSED</code> 恢复到前一运行态。</td><td><span class="tag preview">preview</span></td></tr>
+            <tr><td><code>void GreenTracker_Stop(void)</code></td><td>停止追踪输出并回到 <code>IDLE</code>。</td><td><span class="tag preview">preview</span></td></tr>
+            <tr><td><code>GreenTracker_State_t GreenTracker_GetState(void)</code></td><td>返回当前 typed state。</td><td><span class="tag preview">preview</span></td></tr>
+            <tr><td><code>const char *GreenTracker_GetStateName(void)</code></td><td>返回状态名，供 STATUS 和日志使用。</td><td><span class="tag preview">preview</span></td></tr>
+            <tr><td><code>void GreenTracker_FormatStatus(char *buf, size_t len, const char *prefix)</code></td><td>输出紧凑调试状态。</td><td><span class="tag preview">preview</span></td></tr>
+            <tr><td><code>uint8_t GreenTracker_SetParam(const char *name, float value)</code></td><td>现场调参，必须做范围检查。</td><td><span class="tag preview">preview</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>参数</th><th>默认建议</th><th>范围</th><th>用途</th></tr></thead>
+          <tbody>
+            <tr><td><code>start_timeout_ms</code></td><td><code>2000</code></td><td>题面固定边界</td><td>启动锁定窗口。</td></tr>
+            <tr><td><code>fail_timeout_ms</code></td><td><code>3000</code></td><td>题面固定边界</td><td>连续失败 0 分边界。</td></tr>
+            <tr><td><code>lock_dist_cm10</code></td><td><code>30</code></td><td>题面固定边界</td><td><code>3.0cm</code> 锁定阈值。</td></tr>
+            <tr><td><code>spot_stale_ms</code></td><td><code>150</code></td><td><code>80..300</code></td><td>红/绿点样本过期判断。</td></tr>
+            <tr><td><code>coarse_dist_cm10</code></td><td><code>80</code></td><td><code>40..150</code></td><td>粗追转细追阈值。</td></tr>
+            <tr><td><code>kp_coarse/kp_fine</code></td><td><span class="tag unknown">unknown</span></td><td>依云台和视场标定</td><td>两阶段追踪增益。</td></tr>
+            <tr><td><code>max_step</code></td><td><span class="tag unknown">unknown</span></td><td>依云台限位</td><td>限制单次输出，避免扫出屏幕。</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="runner">
+      <div class="section-head">
+        <h2>状态演练</h2>
+        <p>本页内置的纯前端演练只验证转移链路，不代表固件实现。</p>
+      </div>
+      <div class="runner" aria-live="polite">
+        <div class="runner-top">
+          <div class="runner-state">
+            <div class="label">current state</div>
+            <div class="value" id="runner-state">BOOT</div>
+            <p id="runner-metrics"><code>dist_cm10=unknown fail_ms=0 buzzer=OFF</code></p>
+          </div>
+          <pre class="runner-log" id="runner-log">BOOT: outputs safe, waiting for events.</pre>
+        </div>
+        <div class="runner-controls">
+          <button type="button" data-event="self_ok">自检通过</button>
+          <button type="button" data-event="calib_ok">标定通过</button>
+          <button type="button" data-event="start">启动</button>
+          <button type="button" data-event="red_ok">红点有效</button>
+          <button type="button" data-event="green_ok">绿点有效</button>
+          <button type="button" data-event="near">接近</button>
+          <button type="button" data-event="locked">小于3cm</button>
+          <button type="button" data-event="far">大于3cm</button>
+          <button type="button" data-event="fail3s">连续失败3s</button>
+          <button type="button" data-event="pause">暂停</button>
+          <button type="button" data-event="resume">恢复</button>
+          <button type="button" data-event="stop">停止</button>
+          <button type="button" data-event="clear">清错</button>
+          <button type="button" data-event="auto">自动链路</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const stateEl = document.getElementById("runner-state");
+    const logEl = document.getElementById("runner-log");
+    const metricsEl = document.getElementById("runner-metrics");
+
+    const model = {
+      state: "BOOT",
+      prev: "IDLE",
+      dist: "unknown",
+      failMs: 0,
+      buzzer: "OFF",
+      ready: false,
+      calib: false,
+      red: false,
+      green: false
+    };
+
+    function log(line) {
+      logEl.textContent += "\n" + line;
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    function setState(next, reason) {
+      if (model.state !== next) {
+        log(model.state + " -> " + next + ": " + reason);
+      } else {
+        log(model.state + ": " + reason);
+      }
+      model.state = next;
+      stateEl.textContent = model.state;
+      metricsEl.innerHTML = "<code>dist_cm10=" + model.dist + " fail_ms=" + model.failMs + " buzzer=" + model.buzzer + "</code>";
+    }
+
+    function fail(reason) {
+      model.buzzer = "FAULT";
+      setState("ERROR", reason);
+    }
+
+    function dispatch(eventName) {
+      switch (eventName) {
+      case "self_ok":
+        if (model.state === "BOOT") {
+          model.ready = true;
+          setState("SELF_CHECK", "初始化完成");
+        } else if (model.state === "SELF_CHECK") {
+          setState(model.calib ? "IDLE" : "CALIBRATE", model.calib ? "依赖有效" : "需要标定");
+        }
+        break;
+      case "calib_ok":
+        model.calib = true;
+        model.ready = true;
+        if (model.state === "CALIBRATE" || model.state === "SELF_CHECK") {
+          setState("IDLE", "尺度、ROI 和绿点方向有效");
+        }
+        break;
+      case "start":
+        if (model.state === "IDLE" && model.ready && model.calib) {
+          model.red = false;
+          model.green = false;
+          model.dist = "unknown";
+          model.failMs = 0;
+          model.buzzer = "OFF";
+          setState("ACQUIRE_RED", "启动 2 秒锁定窗口");
+        } else if (model.state === "IDLE") {
+          fail("NOT_READY");
+        }
+        break;
+      case "red_ok":
+        model.red = true;
+        if (model.state === "ACQUIRE_RED") {
+          setState("ACQUIRE_GREEN", "红点有效");
+        } else if (model.state === "TRACK_RECOVER" && model.green && Number(model.dist) <= 30) {
+          model.failMs = 0;
+          model.buzzer = "ON";
+          setState("TRACK_LOCKED", "红绿点恢复");
+        }
+        break;
+      case "green_ok":
+        model.green = true;
+        if (model.state === "ACQUIRE_GREEN") {
+          model.dist = 120;
+          setState("COARSE_SEEK", "绿点有效，开始粗追");
+        }
+        break;
+      case "near":
+        if (model.state === "COARSE_SEEK") {
+          model.dist = 70;
+          setState("FINE_LOCK", "进入细跟踪阈值");
+        }
+        break;
+      case "locked":
+        model.dist = 24;
+        model.failMs = 0;
+        model.buzzer = "ON";
+        if (model.state === "FINE_LOCK" || model.state === "COARSE_SEEK" || model.state === "TRACK_RECOVER") {
+          setState("TRACK_LOCKED", "距离 <= 3cm");
+        }
+        break;
+      case "far":
+        model.dist = 46;
+        model.buzzer = "LOSS";
+        if (model.state === "TRACK_LOCKED") {
+          setState("TRACK_RECOVER", "距离 > 3cm，开始失败计时");
+        } else if (model.state === "TRACK_RECOVER") {
+          model.failMs += 1000;
+          setState("TRACK_RECOVER", "失败累计增加");
+        }
+        break;
+      case "fail3s":
+        if (model.state === "TRACK_RECOVER") {
+          model.failMs = 3000;
+          fail("TRACK_FAIL_3S");
+        }
+        break;
+      case "pause":
+        if (["ACQUIRE_RED", "ACQUIRE_GREEN", "COARSE_SEEK", "FINE_LOCK", "TRACK_LOCKED", "TRACK_RECOVER"].includes(model.state)) {
+          model.prev = model.state;
+          model.buzzer = "HOLD";
+          setState("PAUSED", "立即制动并保留测距位置");
+        }
+        break;
+      case "resume":
+        if (model.state === "PAUSED") {
+          setState(model.prev, "恢复前一运行态");
+        }
+        break;
+      case "stop":
+        model.buzzer = "OFF";
+        model.failMs = 0;
+        model.dist = "unknown";
+        setState("IDLE", "停止追踪输出");
+        break;
+      case "clear":
+        model.buzzer = "OFF";
+        model.failMs = 0;
+        model.dist = "unknown";
+        setState("SELF_CHECK", "清错后重新自检");
+        break;
+      case "auto":
+        runAuto();
+        break;
+      default:
+        break;
+      }
+    }
+
+    function runAuto() {
+      const sequence = ["self_ok", "self_ok", "calib_ok", "start", "red_ok", "green_ok", "near", "locked", "far", "locked", "pause", "resume", "stop"];
+      let index = 0;
+      const timer = window.setInterval(() => {
+        dispatch(sequence[index]);
+        index += 1;
+        if (index >= sequence.length) {
+          window.clearInterval(timer);
+        }
+      }, 420);
+    }
+
+    document.querySelectorAll("[data-event]").forEach((button) => {
+      button.addEventListener("click", () => dispatch(button.dataset.event));
+    });
+  </script>
+</body>
+</html>
