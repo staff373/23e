@@ -7,14 +7,14 @@
 - 近期工程目标：只专注红色激光系统，先建立可实现基本要求（1）-（4）的红色运动目标控制和 MaixCAM-Pro 视觉状态机。
 
 ## 硬件
-- 红色系统主控：TI 端，目录名显示计划使用 `MSPM0G3507`；TI 固件当前在外部工程中维护，本仓库尚未放入具体 SDK/IDE 工程。
+- 红色系统主控：TI 端，使用 `MSPM0G3507`；当前固件工程位于 `firmware/mspm0g3507-red`，由 CCS/Theia 空工程迁移而来，SysConfig 生成文件位于 `Debug/`。
 - 红色系统视觉：`MaixCAM-Pro`，通过 UART 接收 TI 命令并输出红点坐标流、A4 锁存结果和视觉状态。
 - 按键：红色系统当前有 3 个按键，均接在 TI 端；当前约定 `K1` 短按暂停/放弃、`K1` 长按复位到原点，`K2` 启动/保存，`K3` 切模式/切换选择项。
 - 执行器：两个独立二维电控云台，各固定一支激光笔。
 - 光源约束：红色、绿色光斑直径均需小于或等于 1cm。
 - 屏幕：白色，有效面积大于 `0.6m x 0.6m`；中心画 `0.5m x 0.5m` 正方形边线和原点。
 - 摆放：红色激光笔正对屏幕，距离约 1m；绿色激光笔在红色激光笔两侧放置线段上任意放置，线段与屏幕平行，距红色激光笔大于 0.4m、小于 1m。
-- 外设归属：TBD；待工程文件建立后记录 PWM/TIM/GPIO/UART/ADC/I2C/SPI/vision/按键/蜂鸣器或指示灯的唯一初始化所有权。
+- 外设归属：`empty.syscfg` 负责 SYSCTL、按键 GPIO、按键反馈 LED 和 PB22 运行灯生成；`modular/bsp_vision_uart` 负责 `UART1 PA8/PA9` 视觉串口；`modular/bsp_bt` 负责 `UART3 PA26/PA25` 蓝牙串口；`modular/bsp_stepper` 负责 X/Y 两轴 STEP/DIR/EN；`modular/bsp_oled` 负责软件 I2C `PA4/PA5`；`modular/bsp_jy61p` 负责 `UART0 PA10/PA11`，当前默认不启动；直流电机 BSP 已迁入但默认不启动。
 
 ## 代码地图
 - `modular/maixcampro/`：MaixCAM-Pro 视觉侧 MaixPy 应用；当前包含 `main.py`、`vision_spot.py`、`vision_a4.py`、`protocol.py`、`config.py`、`app.yaml` 和 `dist/maix-red_vision-v0.1.0.zip`。
@@ -23,14 +23,14 @@
 - `modular/maixcampro/vision_a4.py`：A4 黑胶带闭合框传统视觉检测；使用 OpenCV 黑色二值化、轮廓层级、外框/内孔四边形拟合、边线精修和多帧稳定判定输出中心线四角点。
 - `modular/maixcampro/protocol.py`：TI-MaixCAM ASCII CSV 协议封包、解包和非阻塞串口轮询。
 - `modular/maixcampro/config.py`：MaixCAM UART、红点帧率、阈值、ROI、候选过滤、白芯精定位参数和 A4 黑框几何过滤参数。
-- TI/MSPM0G3507 工程：当前在外部项目中维护，本仓库尚未放入可读固件入口、SDK 工程、生成代码或用户模块。
+- TI/MSPM0G3507 工程：`firmware/mspm0g3507-red/empty.c` 为当前入口；`modular/` 已迁入按键、按键 LED、蓝牙 UART3、视觉 UART1、视觉通信、步进、OLED、JY61P 和直流电机 BSP/APP 初始化依赖。当前尚未接入 `app_red_task` 主状态机。
 - `docs/state_machines.html`：红色系统 TI 主控主状态机、完整状态转换关系、标定保存内容和 TI-MaixCAM 通信链路；当前仍是 `preview` 状态预览。
 - `2023_E_2023 E题 运动目标控制与自动追踪系统.pdf`：当前题目资料来源。
 - 建议分层：`app_red_task` 负责 TI 主控主状态机、模式选择、按键、暂停、`K1` 长按复位、标定保存、A4 检测等待和错误出口；运动控制子模块负责轨迹和执行器输出；`vision_app` 负责 MaixCAM-Pro 红点检测、A4 灰度检测和 UART 结果输出；BSP/driver 层只做硬件抽象，不承载比赛业务逻辑。
 
 ## 运行路径
-- TI Init order：TBD，待固件工程建立。
-- TI Main loop/task order：TBD，待固件工程建立。
+- TI Init order：当前最小运行版为 `SYSCFG_DL_init()`、`SysTick 1ms`、按键/按键 LED、PB22 运行灯、蓝牙 UART3、视觉通信 UART1、步进 BSP；OLED、JY61P、直流电机保留编译和可开关入口但默认关闭。
+- TI Main loop/task order：当前轮询按键锁存显示、PB22 运行灯、`VisionComm_Poll()`；JY61P 轮询默认关闭。按键仍使用已验证的“单键锁存到全松手”逻辑，尚未接入长短按事件到 `app_red_task`。
 - MaixCAM Init order：`main.py` 启动后打印启动标识，复用 A19/A18 为 UART1，打开 `/dev/ttyS1`，初始化时间戳，并发送一帧 `STATUS`。
 - MaixCAM Main loop order：轮询 UART 命令；`VISION_SPOT640` 和 `VISION_A4GRAY` 都读取固定 640x480 相机帧；红点模式直接输出 640x480 坐标并可叠加上一次锁存 A4 红框，A4 测试版直接在 640x480 上更新 A4 锁存候选；最后按周期输出 `STATUS`、`SPOT` 或锁存重发包。
 - MaixCAM camera/display：当前固定使用 `camera.Camera(640, 480, fps=60)` 和 `display.Display()`；不在 `SPOT640/A4GRAY` 模式切换时重建相机，避免板端 MMF 重新初始化后读帧超时。
@@ -75,8 +75,8 @@
   - 绿色追踪：启动后 2 秒内追踪成功并连续声光提示，两个光斑中心距离 `<=3cm`。
   - 追踪过程：2 秒后中心距离大于 3cm 记一次失败，连续失败 3 秒以上为 0 分。
   - 暂停：红色、绿色系统均需暂停键；同时按下暂停键后两光斑立即制动，便于测距。
-- 最小 build command：TBD，待 MSPM0G3507 工程建立。
-- Flash/run method：TBD。
+- 最小 build command：`powershell -NoProfile -ExecutionPolicy Bypass -File "E:\23e\MSPM0G3507-red\firmware\mspm0g3507-red\.vscode\ti-build-flash.ps1"`。
+- Flash/run method：`powershell -NoProfile -ExecutionPolicy Bypass -File "E:\23e\MSPM0G3507-red\firmware\mspm0g3507-red\.vscode\ti-build-flash.ps1" -Flash`。
 - MaixCAM app artifact：`modular/maixcampro/dist/maix-red_vision-v0.1.0.zip`。
 - MaixCAM UART smoke checks：上板运行后确认启动标识；TI 或串口工具发送 `>T,1,PING` 应收到 `ACK` 和 `STATUS`；发送 `>T,2,MODE,SPOT640` 后应持续收到 `SPOT`，红点照射屏幕时 `valid=1` 且 `x/y/conf/lat` 更新。
 - MaixCAM A4 smoke checks：发送 `>T,3,MODE,A4GRAY` 后观察 overlay 的外框、内孔、中心线、`stable/conf/angle`；未稳定时 `>T,4,LOCK_A4` 应返回 `ACK,LOCK_A4,0,4` 和 `ERR,4`，稳定后应返回 `A4_LOCKED,frame,640,480,x0,y0,x1,y1,x2,y2,x3,y3,angle10,conf,err`。

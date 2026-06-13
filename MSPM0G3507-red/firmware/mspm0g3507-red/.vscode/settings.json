@@ -1,0 +1,6 @@
+{
+    "C_Cpp.default.configuration": "MSPM0G3507_TI_CCS",
+    "files.associations": {
+        "*.syscfg": "javascript"
+    }
+}

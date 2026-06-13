@@ -1,0 +1,22 @@
+# Build outputs
+Debug/
+Release/
+build/
+dist/
+
+# TI/CCS generated artifacts
+*.obj
+*.o
+*.out
+*.map
+*.d
+*.d_raw
+*.log
+*.linkInfo.xml
+*.cmd.genlibs
+*.opt
+
+# Local/editor cache
+.cache/
+*.tmp
+*.bak

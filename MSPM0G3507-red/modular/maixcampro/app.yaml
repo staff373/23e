@@ -11,5 +11,5 @@ files:
   - config.py
   - main.py
   - protocol.py
-  - vision_a4.py  # 打包 A4 黑胶带闭合框检测模块。
+  - vision_a4.py
   - vision_spot.py
