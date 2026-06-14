@@ -1,0 +1,15 @@
+id: green_vision
+name: Green Vision
+name[zh]: 绿色视觉
+version: 0.1.0
+icon: ''
+author: 23e
+desc: Green tracking vision app for red and green laser spots.
+desc[zh]: 绿色追踪红色光斑视觉模块。
+files:
+  - app.yaml
+  - config.py
+  - main.py
+  - protocol.py
+  - vision_green.py
+  - vision_spot.py
