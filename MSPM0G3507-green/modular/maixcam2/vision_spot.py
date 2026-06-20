@@ -22,6 +22,9 @@ def clamp(value, low, high):  # 把数值限制在指定范围内。
         return high  # 返回上限。
     return value  # 返回原始数值。
 
+def cfg(name, default):  # 读取可调参数，兼容 IDE 漏同步旧 config.py 的情况。
+    return getattr(config, name, default)  # 返回 config 中的值，缺失时使用本文件默认值。
+
 def current_roi():  # 计算当前帧应该使用的搜索区域。
     global g_last_roi, g_last_full  # 声明要修改调试用 ROI 状态。
     if g_lost_count >= config.LOST_TO_FULL or g_last_x < 0 or g_last_y < 0:  # 判断是否需要全屏搜索。
@@ -41,16 +44,24 @@ def blob_rect(blob):  # 提取 MaixPy blob 的矩形字段。
 def blob_center(blob):  # 计算 blob 中心点坐标。
     return int(blob[5]), int(blob[6])  # 返回 MaixPy 色块质心作为候选中心点。
 
+def make_blob_like(x, y, w, h, cx, cy):  # 生成兼容现有 blob 访问方式的虚拟候选。
+    return [int(x), int(y), int(w), int(h), 0, int(cx), int(cy)]  # 返回包含矩形和质心字段的列表。
+
 def blob_core_roi(blob):  # 计算白芯精定位使用的小搜索框。
     x, y, w, h = blob_rect(blob)  # 读取候选红色外环矩形。
     pad = config.CORE_ROI_PAD  # 读取白芯搜索框外扩边距。
     cx, cy = blob_center(blob)  # 读取候选质心作为搜索框中心。
-    side = clamp(max(w, h) + pad * 2, 1, config.CORE_ROI_MAX_SIDE)  # 计算并限制白芯搜索框边长。
-    half = side // 2  # 计算搜索框半边长。
-    x0 = clamp(cx - half, 0, config.SPOT_IMG_W - side)  # 计算并限制搜索框左边界。
-    y0 = clamp(cy - half, 0, config.SPOT_IMG_H - side)  # 计算并限制搜索框上边界。
-    x1 = x0 + side  # 计算搜索框右边界。
-    y1 = y0 + side  # 计算搜索框下边界。
+    max_side = cfg("CORE_ROI_MAX_SIDE", 36)  # 读取亮芯搜索框最大边长，兼容旧配置缺失。
+    x0 = clamp(x - pad, 0, config.SPOT_IMG_W - 1)  # 从红色候选外框左侧外扩，避免只围绕偏移质心搜索。
+    y0 = clamp(y - pad, 0, config.SPOT_IMG_H - 1)  # 从红色候选外框上侧外扩，覆盖被黑框切裂的光斑。
+    x1 = clamp(x + w + pad, x0 + 1, config.SPOT_IMG_W)  # 从红色候选外框右侧外扩，并保证搜索框至少一列。
+    y1 = clamp(y + h + pad, y0 + 1, config.SPOT_IMG_H)  # 从红色候选外框下侧外扩，并保证搜索框至少一行。
+    if x1 - x0 > max_side:  # 判断搜索框宽度是否超过现场性能上限。
+        x0 = clamp(cx - max_side // 2, 0, config.SPOT_IMG_W - max_side)  # 围绕候选质心裁剪过宽搜索框。
+        x1 = x0 + max_side  # 保持裁剪后的搜索框宽度固定。
+    if y1 - y0 > max_side:  # 判断搜索框高度是否超过现场性能上限。
+        y0 = clamp(cy - max_side // 2, 0, config.SPOT_IMG_H - max_side)  # 围绕候选质心裁剪过高搜索框。
+        y1 = y0 + max_side  # 保持裁剪后的搜索框高度固定。
     return [x0, y0, x1 - x0, y1 - y0]  # 返回 MaixPy 矩形格式的白芯搜索框。
 
 def pixel_rgb(img, x, y):  # 读取指定像素的 RGB 三通道。
@@ -71,25 +82,83 @@ def core_pixel_ok(r, g, b):  # 判断像素是否像红色激光的泛白高亮�
         return False  # 纯白或灰白反光不作为红点中心。
     return True  # 该像素可参与白芯中心计算。
 
+def core_pixel_score(r, g, b):  # 计算亮芯峰值像素评分。
+    red_gain = max(red_advantage(r, g, b), 0) * cfg("CORE_SCORE_RED_GAIN", 2)  # 把红色优势作为附加权重，压制普通白反光。
+    return r + g + b + red_gain  # 返回总亮度叠加红色优势后的峰值评分。
+
+def core_cluster_ok(x, y, r, g, b, peak_x, peak_y, peak_bright):  # 判断像素是否属于最亮小簇。
+    dx = x - peak_x  # 计算像素相对峰值的 X 距离。
+    dy = y - peak_y  # 计算像素相对峰值的 Y 距离。
+    radius = cfg("CORE_CLUSTER_RADIUS", 4)  # 读取亮芯小簇半径。
+    if dx * dx + dy * dy > radius * radius:  # 判断像素是否离峰值太远。
+        return False  # 离峰值太远时不参与中心计算。
+    if r + g + b < peak_bright - cfg("CORE_PEAK_MARGIN", 28):  # 判断像素是否明显暗于最亮峰值。
+        return False  # 明显暗于峰值时不参与中心计算。
+    return core_pixel_ok(r, g, b)  # 复用亮芯基础约束，避免普通背景进入小簇。
+
 def refine_core_center(img, blob):  # 在红色候选附近用白芯像素精定位中心。
     roi = blob_core_roi(blob)  # 计算白芯搜索区域。
+    peak_x = -1  # 保存亮芯峰值 X 坐标。
+    peak_y = -1  # 保存亮芯峰值 Y 坐标。
+    peak_score = -1  # 保存亮芯峰值评分。
+    peak_bright = 0  # 保存亮芯峰值 RGB 总亮度。
+    for y in range(roi[1], roi[1] + roi[3]):  # 第一遍扫描搜索框内的每一行以寻找局部峰值。
+        for x in range(roi[0], roi[0] + roi[2]):  # 第一遍扫描搜索框内的每一列以寻找局部峰值。
+            r, g, b = pixel_rgb(img, x, y)  # 读取当前像素 RGB。
+            if core_pixel_ok(r, g, b):  # 判断当前像素是否满足亮芯基础条件。
+                score = core_pixel_score(r, g, b)  # 计算当前像素的亮芯峰值评分。
+                if score > peak_score:  # 判断当前像素是否优于已知峰值。
+                    peak_x = x  # 记录新的峰值 X 坐标。
+                    peak_y = y  # 记录新的峰值 Y 坐标。
+                    peak_score = score  # 记录新的峰值评分。
+                    peak_bright = r + g + b  # 记录新的峰值总亮度。
+    if peak_score < 0:  # 判断是否没有找到可靠亮芯峰值。
+        cx, cy = blob_center(blob)  # 回退到红色候选质心。
+        return cx, cy, 0, roi  # 返回回退中心和白芯命中数。
     sum_x = 0  # 累计白芯像素的加权 X 坐标。
     sum_y = 0  # 累计白芯像素的加权 Y 坐标。
     sum_w = 0  # 累计白芯像素亮度权重。
     count = 0  # 统计命中的白芯像素数量。
-    for y in range(roi[1], roi[1] + roi[3]):  # 遍历白芯搜索框内的每一行。
-        for x in range(roi[0], roi[0] + roi[2]):  # 遍历白芯搜索框内的每一列。
+    for y in range(roi[1], roi[1] + roi[3]):  # 第二遍扫描搜索框内的每一行以聚合最亮小簇。
+        for x in range(roi[0], roi[0] + roi[2]):  # 第二遍扫描搜索框内的每一列以聚合最亮小簇。
             r, g, b = pixel_rgb(img, x, y)  # 读取当前像素 RGB。
-            if core_pixel_ok(r, g, b):  # 判断当前像素是否属于白芯。
-                weight = r + g + b  # 使用 RGB 总亮度作为中心权重。
+            if core_cluster_ok(x, y, r, g, b, peak_x, peak_y, peak_bright):  # 判断当前像素是否属于峰值附近亮芯小簇。
+                weight = core_pixel_score(r, g, b)  # 使用亮度叠加红色优势作为中心权重。
                 sum_x = sum_x + x * weight  # 累计加权 X 坐标。
                 sum_y = sum_y + y * weight  # 累计加权 Y 坐标。
                 sum_w = sum_w + weight  # 累计权重。
                 count = count + 1  # 累计白芯像素数量。
     if count <= 0 or sum_w <= 0:  # 判断是否没有找到可靠白芯。
-        cx, cy = blob_center(blob)  # 回退到红色候选质心。
-        return cx, cy, 0, roi  # 返回回退中心和白芯命中数。
+        return peak_x, peak_y, 1, roi  # 回退到单个峰值像素，避免红晕质心把锁点拉偏。
     return int(sum_x / sum_w), int(sum_y / sum_w), count, roi  # 返回亮度加权白芯中心和命中数。
+
+def red_advantage(r, g, b):  # 计算红色相对绿蓝通道的优势。
+    return r - max(g, b)  # 返回 r - max(g, b)，纯白高光通常接近 0。
+
+def red_adv_score(delta):  # 把红色优势换算为候选加分。
+    red_adv_min = cfg("RED_ADV_MIN", 10)  # 读取最低红色优势。
+    if delta < red_adv_min:  # 判断是否低于最低红色优势。
+        return 0  # 红色优势不足时不给分。
+    red_score_max = cfg("RED_ADV_SCORE_MAX", 35)  # 读取红色优势最高加分。
+    span = cfg("RED_ADV_STRONG", 55) - red_adv_min  # 计算从最低值到强红值的跨度。
+    if span <= 0:  # 防止配置非法导致除零。
+        return red_score_max  # 配置非法时直接给满分，避免运行异常。
+    score = (delta - red_adv_min) * red_score_max // span  # 线性映射到配置分值。
+    return clamp(score, 1, red_score_max)  # 限制评分范围。
+
+def candidate_red_adv(img, blob):  # 用少数采样点估计候选的红色优势。
+    cx, cy = blob_center(blob)  # 读取候选质心。
+    r = cfg("RED_PROBE_RADIUS", 2)  # 读取十字采样半径。
+    best = -255  # 初始化最大红色优势。
+    samples = ((0, 0), (-r, 0), (r, 0), (0, -r), (0, r))  # 只采样中心十字，保持常数级开销。
+    for dx, dy in samples:  # 遍历少数采样点。
+        x = clamp(cx + dx, 0, config.SPOT_IMG_W - 1)  # 限制 X 采样坐标。
+        y = clamp(cy + dy, 0, config.SPOT_IMG_H - 1)  # 限制 Y 采样坐标。
+        rr, gg, bb = pixel_rgb(img, x, y)  # 读取采样点 RGB。
+        delta = red_advantage(rr, gg, bb)  # 计算红色优势。
+        if delta > best:  # 判断是否找到更强红色优势。
+            best = delta  # 保存最大红色优势。
+    return best  # 返回候选附近最大红色优势。
 
 def ratio10(w, h):  # 计算候选框宽高比乘以十。
     if h <= 0 or w <= 0:  # 判断候选尺寸是否非法。
@@ -109,40 +178,145 @@ def candidate_ok(blob):  # 判断候选 blob 是否像红色激光点。
         return False  # 形状过扁则丢弃。
     return True  # 候选通过基础过滤。
 
+def locked_tracking():  # 判断当前是否处于上一帧有效锁定状态。
+    return g_last_x >= 0 and g_last_y >= 0 and g_lost_count < config.LOST_TO_FULL  # 返回是否可使用上一帧位置。
+
+def distance2_from_last(cx, cy):  # 计算候选与上一帧位置的平方距离。
+    dx = cx - g_last_x  # 计算 X 方向位移。
+    dy = cy - g_last_y  # 计算 Y 方向位移。
+    return dx * dx + dy * dy  # 返回平方距离。
+
+def jump_from_last(cx, cy):  # 判断候选是否相对上一帧发生突跳。
+    if not locked_tracking():  # 没有上一帧锁定状态时不判突跳。
+        return False  # 返回非突跳。
+    lock_max_step = cfg("LOCK_MAX_STEP", 8)  # 读取最大允许单帧位移。
+    return distance2_from_last(cx, cy) > lock_max_step * lock_max_step  # 超过配置位移则判为突跳。
+
 def distance_score(cx, cy):  # 计算候选与上一帧位置的连续性得分。
     if g_last_x < 0 or g_last_y < 0 or g_lost_count >= config.LOST_TO_FULL:  # 判断是否没有可用上一帧。
         return 20  # 没有上一帧时给中性连续性分。
-    dx = cx - g_last_x  # 计算 X 方向位移。
-    dy = cy - g_last_y  # 计算 Y 方向位移。
-    dist2 = dx * dx + dy * dy  # 计算平方距离避免开方。
-    if dist2 <= 400:  # 判断是否在 20 像素内。
+    dist2 = distance2_from_last(cx, cy)  # 计算平方距离避免开方。
+    lock_max_step = cfg("LOCK_MAX_STEP", 8)  # 读取最大允许单帧位移。
+    if dist2 <= lock_max_step * lock_max_step:  # 判断是否在正常单帧位移内。
         return 35  # 非常连续给高分。
-    if dist2 <= 6400:  # 判断是否在 80 像素内。
-        return 20  # 基本连续给中分。
-    return 0  # 跳变较大不给连续性分。
+    if dist2 <= 400:  # 判断是否在 20 像素内。
+        return 15  # 小幅偏离给中分。
+    return -20  # 突跳候选主动扣分，避免黑框边缘抢锁。
 
-def candidate_score(blob):  # 给候选红点打分。
+def candidate_score(img, blob):  # 给候选红点打分。
     x, y, w, h = blob_rect(blob)  # 读取候选矩形。
     cx, cy = blob_center(blob)  # 计算候选中心。
+    red_adv = candidate_red_adv(img, blob)  # 计算候选红色优势。
+    red_score = red_adv_score(red_adv)  # 把红色优势换算为评分。
     area = w * h  # 计算候选面积。
     compact = 30 - min(ratio10(w, h), 30)  # 计算形状紧凑得分。
     size = min(area, 120) * 25 // 120  # 计算候选尺寸得分。
     continuity = distance_score(cx, cy)  # 计算连续性得分。
-    return compact + size + continuity  # 返回综合分。
+    return compact + size + continuity + red_score, red_adv  # 返回综合分和红色优势。
 
-def best_blob(blobs):  # 从候选列表中选出最可信红点。
+def blob_distance2(blob_a, blob_b):  # 计算两个候选中心之间的平方距离。
+    ax, ay = blob_center(blob_a)  # 读取第一个候选中心。
+    bx, by = blob_center(blob_b)  # 读取第二个候选中心。
+    dx = ax - bx  # 计算 X 方向距离。
+    dy = ay - by  # 计算 Y 方向距离。
+    return dx * dx + dy * dy  # 返回平方距离避免开方。
+
+def near_blob(blob_a, blob_b):  # 判断两个红色碎块是否属于同一个激光点候选组。
+    merge_dist = cfg("MERGE_BLOB_DIST", 26)  # 读取碎块合并距离。
+    return blob_distance2(blob_a, blob_b) <= merge_dist * merge_dist  # 距离足够近则认为需要合并。
+
+def collect_blob_group(seed, candidates):  # 从一个种子候选开始收集近邻红色碎块。
+    group = [seed]  # 初始化候选组并包含种子。
+    changed = True  # 标记本轮是否继续扩展到新碎块。
+    while changed:  # 迭代扩展传递近邻，处理左中右多碎块。
+        changed = False  # 每轮开始先假设没有新增。
+        for blob in candidates:  # 遍历所有候选碎块。
+            if blob in group:  # 判断该碎块是否已经在组内。
+                continue  # 已在组内则跳过。
+            for member in group:  # 遍历当前组内碎块。
+                if near_blob(blob, member):  # 判断该碎块是否贴近组内任一碎块。
+                    group.append(blob)  # 把近邻碎块加入当前组。
+                    changed = True  # 标记本轮有新增以继续扩展。
+                    break  # 当前碎块已加入，结束组内遍历。
+    return group  # 返回收集到的红点碎块组。
+
+def merge_blob_group(group):  # 把同一激光点的多个红色碎块合并为一个虚拟候选。
+    x0 = config.SPOT_IMG_W - 1  # 初始化合并框左边界为最大值。
+    y0 = config.SPOT_IMG_H - 1  # 初始化合并框上边界为最大值。
+    x1 = 0  # 初始化合并框右边界为最小值。
+    y1 = 0  # 初始化合并框下边界为最小值。
+    sum_x = 0  # 累计按面积加权的中心 X。
+    sum_y = 0  # 累计按面积加权的中心 Y。
+    sum_w = 0  # 累计候选面积权重。
+    for blob in group:  # 遍历同组碎块。
+        x, y, w, h = blob_rect(blob)  # 读取碎块矩形。
+        cx, cy = blob_center(blob)  # 读取碎块中心。
+        area = max(w * h, 1)  # 计算面积权重并保证非零。
+        x0 = min(x0, x)  # 更新合并框左边界。
+        y0 = min(y0, y)  # 更新合并框上边界。
+        x1 = max(x1, x + w)  # 更新合并框右边界。
+        y1 = max(y1, y + h)  # 更新合并框下边界。
+        sum_x = sum_x + cx * area  # 累计面积加权 X。
+        sum_y = sum_y + cy * area  # 累计面积加权 Y。
+        sum_w = sum_w + area  # 累计面积权重。
+    w = max(x1 - x0, 1)  # 计算合并框宽度并保证合法。
+    h = max(y1 - y0, 1)  # 计算合并框高度并保证合法。
+    cx = int(sum_x / sum_w) if sum_w > 0 else x0 + w // 2  # 计算合并候选中心 X。
+    cy = int(sum_y / sum_w) if sum_w > 0 else y0 + h // 2  # 计算合并候选中心 Y。
+    return make_blob_like(x0, y0, w, h, cx, cy)  # 返回虚拟候选供后续白芯精定位复用。
+
+def best_blob(img, blobs):  # 从候选列表中选出最可信红点。
     best = None  # 初始化最佳候选为空。
     best_score = -1  # 初始化最佳得分为非法值。
+    best_red_adv = 0  # 初始化最佳候选红色优势。
+    candidates = []  # 保存通过基础过滤的红色候选碎块。
     for blob in blobs:  # 遍历所有候选色块。
         if candidate_ok(blob):  # 判断候选是否通过基础过滤。
-            score = candidate_score(blob)  # 计算候选得分。
-            if score > best_score:  # 判断是否优于当前最佳候选。
-                best = blob  # 保存新的最佳候选。
-                best_score = score  # 保存新的最佳得分。
-    return best, best_score  # 返回最佳候选和得分。
+            candidates.append(blob)  # 保存可参与合并和评分的候选碎块。
+    for blob in candidates:  # 遍历每个候选碎块作为合并种子。
+        group = collect_blob_group(blob, candidates)  # 收集该碎块附近同属一个激光点的候选组。
+        merged = merge_blob_group(group)  # 把近邻碎块组合并为虚拟候选。
+        score, red_adv = candidate_score(img, merged)  # 按合并候选计算综合得分。
+        score = score + min(len(group) - 1, 3) * 8  # 多碎块合并时适当加分，避免单个反光碎块抢锁。
+        if score > best_score:  # 判断是否优于当前最佳候选组。
+            best = merged  # 保存新的最佳合并候选。
+            best_score = score  # 保存新的最佳得分。
+            best_red_adv = red_adv  # 保存最佳候选红色优势。
+    return best, best_score, best_red_adv  # 返回最佳候选、得分和红色优势。
+
+def local_red_recapture(img):  # 在突跳时围绕上一帧位置快速重捕获黑框内红点。
+    if not locked_tracking():  # 判断是否缺少上一帧位置。
+        return None  # 没有上一帧时无法本地重捕获。
+    radius = cfg("LOCAL_RECAPTURE_RADIUS", 6)  # 读取本地搜索半径。
+    sum_x = 0  # 累计红色优势加权 X。
+    sum_y = 0  # 累计红色优势加权 Y。
+    sum_w = 0  # 累计红色优势权重。
+    count = 0  # 统计命中像素数。
+    best_adv = -255  # 保存最大红色优势。
+    x0 = clamp(g_last_x - radius, 0, config.SPOT_IMG_W - 1)  # 计算搜索左边界。
+    x1 = clamp(g_last_x + radius, 0, config.SPOT_IMG_W - 1)  # 计算搜索右边界。
+    y0 = clamp(g_last_y - radius, 0, config.SPOT_IMG_H - 1)  # 计算搜索上边界。
+    y1 = clamp(g_last_y + radius, 0, config.SPOT_IMG_H - 1)  # 计算搜索下边界。
+    for y in range(y0, y1 + 1):  # 遍历小窗口行。
+        for x in range(x0, x1 + 1):  # 遍历小窗口列。
+            r, g, b = pixel_rgb(img, x, y)  # 读取像素 RGB。
+            adv = red_advantage(r, g, b)  # 计算红色优势。
+            if adv > best_adv:  # 判断是否刷新最大红色优势。
+                best_adv = adv  # 保存最大红色优势。
+            if adv >= cfg("LOCAL_RECAPTURE_MIN_ADV", 12):  # 判断是否像红色激光弱点。
+                sum_x = sum_x + x * adv  # 累计加权 X。
+                sum_y = sum_y + y * adv  # 累计加权 Y。
+                sum_w = sum_w + adv  # 累计权重。
+                count = count + 1  # 累计像素数。
+    if count < cfg("LOCAL_RECAPTURE_MIN_PIXELS", 2) or sum_w <= 0:  # 判断本地重捕获是否不可靠。
+        return None  # 返回失败。
+    return int(sum_x / sum_w), int(sum_y / sum_w), count, best_adv  # 返回本地重捕获中心。
 
 def invalid_result(err_code=0):  # 生成无效红点结果。
     return {"valid": 0, "x": -1, "y": -1, "conf": 0, "err": err_code, "roi": g_last_roi, "core_roi": None, "core": 0, "full": g_last_full, "lost": g_lost_count, "blob": None}  # 返回无效结果字典。
+
+def hold_last_result():  # 生成短暂丢失时保持上一帧坐标的结果。
+    return {"valid": 1, "x": g_last_x, "y": g_last_y, "conf": 20, "err": 0, "roi": g_last_roi, "core_roi": None, "core": 0, "full": g_last_full, "lost": g_lost_count, "blob": None}  # 返回低置信度保持结果。
 
 def detect(img):  # 在一帧 RGB 图像中检测红色激光点。
     global g_last_x, g_last_y, g_lost_count  # 声明要修改跟踪位置和丢失计数。
@@ -151,11 +325,25 @@ def detect(img):  # 在一帧 RGB 图像中检测红色激光点。
         blobs = img.find_blobs(config.RED_THRESHOLDS, roi=roi, pixels_threshold=config.MIN_PIXELS, area_threshold=config.MIN_AREA)  # 在 ROI 内寻找红色色块。
     else:  # 处理全屏搜索。
         blobs = img.find_blobs(config.RED_THRESHOLDS, pixels_threshold=config.MIN_PIXELS, area_threshold=config.MIN_AREA)  # 在全屏寻找红色色块。
-    blob, score = best_blob(blobs)  # 从候选中选出最佳红点。
+    blob, score, red_adv = best_blob(img, blobs)  # 从候选中选出最佳红点。
     if not blob:  # 判断是否没有找到可信红点。
         g_lost_count = g_lost_count + 1  # 增加连续丢失计数。
+        if g_last_x >= 0 and g_last_y >= 0 and g_lost_count <= cfg("HOLD_LAST_MAX_LOST", 1):  # 判断是否允许短暂保持上一帧坐标。
+            return hold_last_result()  # 输出上一帧坐标，避免单帧阈值抖动打断控制。
         return invalid_result(0)  # 返回无效但无处理错误的结果。
     cx, cy, core_count, core_roi = refine_core_center(img, blob)  # 优先用白芯亮度加权中心精定位红点。
+    if jump_from_last(cx, cy):  # 判断候选是否发生超过配置阈值的突跳。
+        if red_adv < cfg("RED_ADV_MIN", 10):  # 突跳候选缺少红色优势时，优先怀疑黑框边缘白色高光。
+            local = local_red_recapture(img)  # 尝试在上一帧附近找黑框内弱红点。
+            if local:  # 判断本地重捕获是否成功。
+                cx, cy, local_count, red_adv = local  # 使用本地重捕获中心替代突跳候选。
+                core_count = 0  # 本地重捕获不使用白芯计数。
+                core_roi = None  # 本地重捕获不绘制白芯搜索框。
+                blob = None  # 不显示被拒绝的突跳候选框。
+                score = red_adv_score(red_adv) + 20  # 给本地重捕获生成保守置信度基础分。
+            else:  # 处理本地重捕获失败。
+                g_lost_count = g_lost_count + 1  # 增加丢失计数但保留上一帧位置。
+                return invalid_result(0)  # 输出无效，避免黑框边缘接管坐标。
     g_last_x = cx  # 保存红点 X 坐标用于下一帧 ROI。
     g_last_y = cy  # 保存红点 Y 坐标用于下一帧 ROI。
     g_lost_count = 0  # 清零连续丢失计数。
@@ -163,17 +351,17 @@ def detect(img):  # 在一帧 RGB 图像中检测红色激光点。
     return {"valid": 1, "x": cx, "y": cy, "conf": conf, "err": 0, "roi": g_last_roi, "core_roi": core_roi, "core": core_count, "full": g_last_full, "lost": g_lost_count, "blob": blob}  # 返回有效红点结果。
 
 def draw_overlay(img, result, frame_id, fps10, latency_ms):  # 绘制板端调试叠加信息。
-    if result["roi"]:  # 判断当前是否有 ROI。
+    if config.DEBUG_DRAW_DETAIL and result["roi"]:  # 判断是否需要绘制当前 ROI。
         img.draw_rect(result["roi"][0], result["roi"][1], result["roi"][2], result["roi"][3], image.COLOR_BLUE)  # 绘制当前 ROI 框。
-    if result["blob"]:  # 判断当前是否有最终候选 blob。
+    if config.DEBUG_DRAW_DETAIL and result["blob"]:  # 判断是否需要绘制最终候选框。
         x, y, w, h = blob_rect(result["blob"])  # 读取最终候选矩形。
         img.draw_rect(x, y, w, h, image.COLOR_GREEN)  # 绘制最终候选框。
-    if result["core_roi"]:  # 判断当前是否有白芯搜索框。
+    if config.DEBUG_DRAW_DETAIL and result["core_roi"]:  # 判断是否需要绘制白芯搜索框。
         img.draw_rect(result["core_roi"][0], result["core_roi"][1], result["core_roi"][2], result["core_roi"][3], image.COLOR_BLUE)  # 绘制白芯搜索框便于现场调参。
     if result["valid"]:  # 判断当前红点是否有效。
         img.draw_rect(result["x"] - config.CENTER_BOX_HALF, result["y"] - config.CENTER_BOX_HALF, config.CENTER_BOX_HALF * 2, config.CENTER_BOX_HALF * 2, image.COLOR_RED)  # 按配置绘制红点中心小框。
     mode = "FULL" if result["full"] else "ROI"  # 生成当前搜索模式字符串。
     line1 = "id={} fps10={} lat={} v={} c={} core={}".format(frame_id, fps10, latency_ms, result["valid"], result["conf"], result["core"])  # 生成第一行调试文本。
     line2 = "{} lost={} x={} y={}".format(mode, result["lost"], result["x"], result["y"])  # 生成第二行调试文本。
-    img.draw_string(2, 2, line1, image.COLOR_GREEN, scale=config.DEBUG_TEXT_SCALE)  # 按配置字体大小绘制第一行调试文本。
-    img.draw_string(2, 2 + config.DEBUG_TEXT_STEP, line2, image.COLOR_GREEN, scale=config.DEBUG_TEXT_SCALE)  # 按配置字体大小绘制第二行调试文本。
+    img.draw_string(2, 2, line1, image.COLOR_GREEN, scale=config.DEBUG_TEXT_SCALE, wrap=False)  # 按收紧后的字号绘制第一行调试文本并关闭自动换行。
+    img.draw_string(2, 2 + config.DEBUG_TEXT_STEP, line2, image.COLOR_GREEN, scale=config.DEBUG_TEXT_SCALE, wrap=False)  # 按收紧后的字号绘制第二行调试文本并关闭自动换行。

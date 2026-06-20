@@ -59,10 +59,66 @@ def setup_uart():  # 初始化 MaixCAM2 UART2。
     err.check_raise(pinmap.set_pin_function(config.UART_RX_PIN, config.UART_RX_FUNC), "set UART RX failed")  # 按配置复用 RX 引脚。
     return uart.UART(config.UART_DEVICE, config.UART_BAUD)  # 按配置打开 UART 串口对象。
 
+def camera_safe(label, action):  # 安全执行单个相机参数读写，避免某块板不支持接口时主程序退出。
+    try:  # 捕获 MaixCAM-Pro 与 MaixCAM2 固件接口差异导致的异常。
+        value = action()  # 执行实际相机参数读取或设置动作。
+        print("CAMERA_CFG {}={}".format(label, value))  # 打印参数结果，便于在 MaixVision 终端对比两块板。
+        return value  # 返回读取或设置结果给调用方。
+    except Exception as e:  # 捕获相机接口失败并继续运行识别主循环。
+        print("CAMERA_CFG {}=ERR {}".format(label, e))  # 打印失败原因，便于判断固件或硬件是否不支持该接口。
+        return None  # 返回空值表示本项相机参数读取或设置失败。
+
+def probe_camera_input(cam):  # 打印当前相机输入状态，用于比较 MaixCAM-Pro 与 MaixCAM2 的实际 ISP 参数。
+    if not config.CAMERA_PROBE_ENABLE:  # 判断是否关闭相机输入探针。
+        return  # 探针关闭时不读取相机参数，避免额外日志干扰。
+    print("CAMERA_CFG probe=begin")  # 打印探针开始标记，方便从日志中截取完整参数块。
+    camera_safe("device_name", lambda: camera.get_device_name())  # 读取官方模块级传感器名称。
+    camera_safe("module_sensor_size", lambda: camera.get_sensor_size())  # 读取官方模块级传感器原始尺寸。
+    camera_safe("camera_device", lambda: cam.device())  # 读取当前 Camera 对象对应的设备路径。
+    camera_safe("camera_sensor_size", lambda: cam.get_sensor_size())  # 读取当前 Camera 对象的传感器尺寸。
+    camera_safe("camera_size", lambda: [cam.width(), cam.height()])  # 读取当前输出图像宽高。
+    camera_safe("camera_fps", lambda: cam.fps())  # 读取当前相机对象报告的 FPS。
+    camera_safe("camera_format", lambda: cam.format())  # 读取当前相机输出图像格式。
+    camera_safe("camera_buff_num", lambda: cam.buff_num())  # 读取当前相机缓冲数量。
+    camera_safe("exp_mode", lambda: cam.exp_mode())  # 读取当前自动或手动曝光模式。
+    camera_safe("exposure_us", lambda: cam.exposure())  # 读取当前曝光时间，单位为微秒。
+    camera_safe("gain", lambda: cam.gain())  # 读取当前相机增益。
+    camera_safe("iso", lambda: cam.iso())  # 读取当前相机 ISO。
+    camera_safe("awb_mode", lambda: cam.awb_mode())  # 读取当前自动或手动白平衡模式。
+    camera_safe("wb_gain", lambda: cam.set_wb_gain())  # 读取当前白平衡增益 [R, Gr, Gb, B]。
+    camera_safe("luma", lambda: cam.luma())  # 读取当前亮度参数。
+    camera_safe("constrast", lambda: cam.constrast())  # 读取当前对比度参数，保持 MaixPy 官方拼写。
+    camera_safe("saturation", lambda: cam.saturation())  # 读取当前饱和度参数。
+    camera_safe("aiisp_workmode", lambda: cam.get_aiisp_workmode())  # 读取 MaixCAM2 AI-ISP 工作状态，非 MaixCAM2 失败也允许。
+    print("CAMERA_CFG probe=end")  # 打印探针结束标记，便于日志对齐。
+
+def apply_camera_input_config(cam):  # 按配置可选锁定相机输入参数，并始终支持一次性探针输出。
+    if config.CAMERA_LOCK_INPUT:  # 判断是否启用相机输入锁定。
+        if config.CAMERA_MANUAL_EXPOSURE_US > 0:  # 判断是否配置了手动曝光时间。
+            camera_safe("set_exp_mode_manual", lambda: cam.exp_mode(camera.AeMode.Manual))  # 切换到手动曝光模式。
+            camera_safe("set_exposure_us", lambda: cam.exposure(config.CAMERA_MANUAL_EXPOSURE_US))  # 写入手动曝光时间。
+        if config.CAMERA_MANUAL_GAIN > 0:  # 判断是否配置了手动增益。
+            camera_safe("set_gain", lambda: cam.gain(config.CAMERA_MANUAL_GAIN))  # 写入手动增益，官方说明会影响手动曝光链路。
+        if config.CAMERA_MANUAL_ISO > 0:  # 判断是否配置了手动 ISO。
+            camera_safe("set_iso", lambda: cam.iso(config.CAMERA_MANUAL_ISO))  # 写入手动 ISO，向 MaixCAM-Pro 的 iso=100 靠拢。
+        if len(config.CAMERA_MANUAL_WB_GAIN) == 4:  # 判断是否配置了完整四通道白平衡增益。
+            camera_safe("set_awb_manual", lambda: cam.awb_mode(camera.AwbMode.Manual))  # 切换到手动白平衡模式。
+            camera_safe("set_wb_gain", lambda: cam.set_wb_gain(config.CAMERA_MANUAL_WB_GAIN))  # 写入手动白平衡增益。
+        if config.CAMERA_LUMA >= 0:  # 判断是否配置了亮度参数。
+            camera_safe("set_luma", lambda: cam.luma(config.CAMERA_LUMA))  # 写入亮度参数。
+        if config.CAMERA_CONTRAST >= 0:  # 判断是否配置了对比度参数。
+            camera_safe("set_constrast", lambda: cam.constrast(config.CAMERA_CONTRAST))  # 写入对比度参数，保持 MaixPy 官方拼写。
+        if config.CAMERA_SATURATION >= 0:  # 判断是否配置了饱和度参数。
+            camera_safe("set_saturation", lambda: cam.saturation(config.CAMERA_SATURATION))  # 写入饱和度参数。
+    if config.CAMERA_SKIP_FRAMES_AFTER_CONFIG > 0:  # 判断是否需要在配置后丢弃若干帧等待 ISP 稳定。
+        camera_safe("skip_frames", lambda: cam.skip_frames(config.CAMERA_SKIP_FRAMES_AFTER_CONFIG))  # 丢弃启动阶段不稳定图像。
+    probe_camera_input(cam)  # 打印当前相机输入状态，用于后续把两块板调到接近。
+
 def setup_camera():  # 初始化固定 640x480 相机和显示。
     global g_camera, g_display  # 声明要修改相机和显示对象。
     if not g_camera:  # 判断相机是否尚未初始化。
         g_camera = camera.Camera(config.TRACK_IMG_W, config.TRACK_IMG_H, fps=config.CAMERA_FPS)  # 固定使用 640x480 相机，避免运行中重建相机。
+        apply_camera_input_config(g_camera)  # 创建相机后按配置读取或应用输入参数，默认配置下不改动相机自动控制。
     if not g_display:  # 判断显示是否尚未初始化。
         g_display = display.Display()  # 创建 MaixCAM2 显示对象。
 
@@ -239,10 +295,10 @@ def draw_track_overlay(img):  # 绘制红绿双光斑调试叠加信息。
     line2 = "r={}({},{}) g={}({},{})".format(g_red_valid, g_red_x, g_red_y, g_green_valid, g_green_x, g_green_y)  # 生成第二行调试文本。
     line3 = "err=({},{}) d={}mm lock={}".format(g_err_x, g_err_y, g_dist_mm, g_track_locked)  # 生成第三行调试文本，d 为 10px 等效 3cm 的临时距离。
     line4 = "conf=({},{}) px3cm={}".format(g_red_conf, g_green_conf, config.TRACK_3CM_PIXEL)  # 生成第四行调试文本，显示当前 3cm 等效像素参数。
-    img.draw_string(2, 2 + config.DEBUG_TEXT_STEP * 2, line1, image.COLOR_GREEN, scale=config.DEBUG_TEXT_SCALE)  # 避开红点模块前两行文字绘制双点状态。
-    img.draw_string(2, 2 + config.DEBUG_TEXT_STEP * 3, line2, image.COLOR_GREEN, scale=config.DEBUG_TEXT_SCALE)  # 避开红点模块文字绘制红绿坐标。
-    img.draw_string(2, 2 + config.DEBUG_TEXT_STEP * 4, line3, image.COLOR_GREEN, scale=config.DEBUG_TEXT_SCALE)  # 避开红点模块文字绘制像素误差和置信度。
-    img.draw_string(2, 2 + config.DEBUG_TEXT_STEP * 5, line4, image.COLOR_GREEN, scale=config.DEBUG_TEXT_SCALE)  # 绘制临时等效像素参数和红绿置信度。
+    img.draw_string(2, 2 + config.DEBUG_TEXT_STEP * 2, line1, image.COLOR_GREEN, scale=config.DEBUG_TEXT_SCALE, wrap=False)  # 使用收紧后的字号绘制双点状态并关闭自动换行。
+    img.draw_string(2, 2 + config.DEBUG_TEXT_STEP * 3, line2, image.COLOR_GREEN, scale=config.DEBUG_TEXT_SCALE, wrap=False)  # 使用收紧后的字号绘制红绿坐标并关闭自动换行。
+    img.draw_string(2, 2 + config.DEBUG_TEXT_STEP * 4, line3, image.COLOR_GREEN, scale=config.DEBUG_TEXT_SCALE, wrap=False)  # 使用收紧后的字号绘制像素误差并关闭自动换行。
+    img.draw_string(2, 2 + config.DEBUG_TEXT_STEP * 5, line4, image.COLOR_GREEN, scale=config.DEBUG_TEXT_SCALE, wrap=False)  # 使用收紧后的字号绘制置信度参数并关闭自动换行。
 
 def update_track_frame(frame_start_ms):  # 读取并处理一帧红绿双光斑图像。
     global g_frame_id  # 声明要修改帧号。
@@ -251,8 +307,13 @@ def update_track_frame(frame_start_ms):  # 读取并处理一帧红绿双光斑�
     if img is None:  # 判断相机读取是否失败。
         return  # 读取失败时结束本帧处理并等待 TI 重新下发模式。
     g_frame_id = g_frame_id + 1  # 增加真实相机处理帧号。
+    if g_frame_id == 1:  # 判断是否为启动后的第一帧图像。
+        g_display.show(img)  # 先显示原始相机画面，避免识别链路慢时屏幕一直黑。
     red_result = vision_spot.detect(img)  # 检测红色激光点，算法沿用红色工程。
-    green_result = vision_green.detect(img)  # 检测绿色激光点。
+    if config.RED_ONLY_TEST:  # 判断是否启用红点单跑验证模式。
+        green_result = {"valid": 0, "x": -1, "y": -1, "conf": 0, "err": ERR_NONE, "roi": None, "core_roi": None, "core": 0, "full": True, "lost": config.LOST_TO_FULL, "blob": None}  # 生成固定无效绿点结果，避免绿点识别影响红点验证。
+    else:  # 处理正常红绿双光斑检测模式。
+        green_result = vision_green.detect(img)  # 检测绿色激光点。
     latency_ms = elapsed_ms(frame_start_ms, now_ms())  # 记录采集加双点识别耗时。
     dt_ms = update_fps(frame_start_ms)  # 更新 FPS10 并取得相邻帧间隔。
     update_track_schedule(dt_ms)  # 根据真实帧间隔更新 TRACK 发送调度。
