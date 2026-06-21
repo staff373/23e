@@ -178,6 +178,28 @@ def candidate_ok(blob):  # 判断候选 blob 是否像红色激光点。
         return False  # 形状过扁则丢弃。
     return True  # 候选通过基础过滤。
 
+def candidate_pre_score(blob):  # 用不读像素的轻量分数给红色候选排序。
+    x, y, w, h = blob_rect(blob)  # 读取候选矩形用于面积和形状评分。
+    cx, cy = blob_center(blob)  # 读取候选中心用于连续性评分。
+    area = w * h  # 计算候选框面积。
+    compact = 30 - min(ratio10(w, h), 30)  # 计算候选形状紧凑度，越接近圆形越高。
+    size = min(area, 120) * 25 // 120  # 计算候选尺寸基础分，避免人体大块完全压过小光斑。
+    continuity = distance_score(cx, cy)  # 复用上一帧连续性，优先保留锁定点附近候选。
+    return compact + size + continuity  # 返回不依赖 get_pixel 的预筛分数。
+
+def trim_candidates(candidates):  # 限制进入红点分组和像素采样的候选数量。
+    limit = 16  # 固定保留最多 16 个红色候选，防止人进入画面时碎块数量拖垮单帧处理。
+    if len(candidates) <= limit:  # 判断候选数量是否已经在安全范围内。
+        return candidates  # 数量不多时保持原列表，避免额外排序开销。
+    ranked = []  # 保存预筛分数和候选引用。
+    for blob in candidates:  # 遍历所有基础过滤后的候选。
+        ranked.append((candidate_pre_score(blob), -len(ranked), blob))  # 记录分数和唯一序号，避免同分时比较 blob 对象。
+    ranked.sort(reverse=True)  # 按预筛分数从高到低排序，优先保留小而连续的候选。
+    kept = []  # 保存截断后的候选列表。
+    for i in range(limit):  # 只取固定数量的最高分候选。
+        kept.append(ranked[i][2])  # 取回原始 blob 供后续合并和精定位使用。
+    return kept  # 返回数量受控的候选列表。
+
 def locked_tracking():  # 判断当前是否处于上一帧有效锁定状态。
     return g_last_x >= 0 and g_last_y >= 0 and g_lost_count < config.LOST_TO_FULL  # 返回是否可使用上一帧位置。
 
@@ -273,6 +295,7 @@ def best_blob(img, blobs):  # 从候选列表中选出最可信红点。
     for blob in blobs:  # 遍历所有候选色块。
         if candidate_ok(blob):  # 判断候选是否通过基础过滤。
             candidates.append(blob)  # 保存可参与合并和评分的候选碎块。
+    candidates = trim_candidates(candidates)  # 截断候选数量，避免人体红色碎块导致分组耗时爆炸。
     for blob in candidates:  # 遍历每个候选碎块作为合并种子。
         group = collect_blob_group(blob, candidates)  # 收集该碎块附近同属一个激光点的候选组。
         merged = merge_blob_group(group)  # 把近邻碎块组合并为虚拟候选。

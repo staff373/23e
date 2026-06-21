@@ -1,0 +1,60 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "TI: Generate SysConfig",
+            "type": "shell",
+            "command": "C:/ti/sysconfig_1.26.2/sysconfig_cli.bat",
+            "args": [
+                "--product",
+                "C:/ti/mspm0_sdk_2_10_00_04/.metadata/product.json",
+                "--script",
+                "${workspaceFolder}/empty.syscfg",
+                "--output",
+                "${workspaceFolder}/Debug",
+                "--compiler",
+                "ticlang"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "group": "build",
+            "problemMatcher": []
+        },
+        {
+            "label": "TI: Build",
+            "type": "shell",
+            "command": "powershell",
+            "args": [
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                "${workspaceFolder}/.vscode/ti-build-flash.ps1"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "group": "build",
+            "problemMatcher": []
+        },
+        {
+            "label": "TI: Build and Flash",
+            "type": "shell",
+            "command": "powershell",
+            "args": [
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                "${workspaceFolder}/.vscode/ti-build-flash.ps1",
+                "-Flash"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "group": "build",
+            "problemMatcher": []
+        }
+    ]
+}

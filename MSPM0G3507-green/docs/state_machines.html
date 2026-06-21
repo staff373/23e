@@ -13,7 +13,6 @@
       --muted: #6e665d;
       --line: #d9cdbc;
       --strong: #24201b;
-      --red: #b5222f;
       --green: #286140;
       --blue: #245468;
       --amber: #926100;
@@ -307,16 +306,16 @@
 <body>
   <header>
     <div class="hero">
-      <p class="eyebrow">Discussion Frame</p>
+      <p class="eyebrow">Green System State</p>
       <h1>绿色系统状态机大框架</h1>
-      <p class="summary">当前内容为混合状态：MSPM0G3507 顶层监督状态机仍为 <span class="tag draft">preview</span>；MaixCAM2 视觉侧 <code>VISION_IDLE/VISION_TRACK640/VISION_ERROR</code> 已建立。</p>
+      <p class="summary">当前源码状态：MSPM0G3507 顶层基础状态机、按键入口、蓝牙 console、视觉协议、进阶第二问连续追踪、红点丢失保护、追踪质量计时、成功声光提示和云台安全骨架已接入。</p>
     </div>
     <nav aria-label="状态机讨论框架目录">
       <div class="nav-inner">
         <a href="#scope">边界</a>
         <a href="#ownership">顶层</a>
         <a href="#children">子状态机</a>
-        <a href="#keys">按键</a>
+        <a href="#commands">命令入口</a>
         <a href="#protocol">协议</a>
         <a href="#states">顶层状态</a>
         <a href="#run-active">运行期</a>
@@ -335,11 +334,12 @@
         <table>
           <tbody>
             <tr><td>比赛目标</td><td>绿色光斑独立追踪红色光斑。<span class="tag fixed">fixed</span></td></tr>
-            <tr><td>计分边界</td><td>启动后 2 秒内追踪成功；运行中红绿中心距离超过题面阈值会导致失败累计。<span class="tag fixed">fixed</span></td></tr>
+            <tr><td>计分边界</td><td>当前进阶第一问锁定启动后第一帧有效红点坐标为一次性固定目标，2 秒内追到固定点结束本轮，固定点达标以 <code>abs(err_x)&lt;=3 && abs(err_y)&lt;=3</code> 判定；第二问追红点下方固定偏移目标，默认 <code>q2_offset_x_px=0</code>、<code>q2_offset_y_px=10</code>，当前红点有效时按红点速度做短时预测并限制 Y 预测不把目标带到红点上方；达标以 <code>target_ok && q2_sep_ok</code> 判定，即偏移目标误差达标且红绿距离满足最小分离；K1/K2 声光提示独立按距离 <code>&lt;=8pt</code> 首次触发；红点消失后持续朝最后一次红点下方固定偏移目标运动，直到红点下一次出现。<span class="tag fixed">implemented</span></td></tr>
             <tr><td>独立性边界</td><td>绿色系统不接收红色系统坐标、路径、状态或时序信息。<span class="tag fixed">fixed</span></td></tr>
-            <tr><td>状态机状态</td><td>MSPM0G3507 顶层大框架为 <span class="tag draft">preview</span>；MaixCAM2 视觉侧为 <span class="tag fixed">implemented</span>。</td></tr>
+            <tr><td>状态机状态</td><td>MSPM0G3507 顶层基础状态机、第一问一次性固定点追踪并提示、第二问固定偏移目标连续追踪、红点短时预测、转角短时增强、死区泄漏、红点丢失后持续追最后红点偏移目标、追踪质量计时和成功声光提示为 <span class="tag fixed">implemented</span>；MaixCAM2 视觉侧为 <span class="tag fixed">implemented</span>。</td></tr>
             <tr><td>通信边界</td><td>TI 侧 <code>UART1 PA8/PA9</code>，MaixCAM2 侧 <code>UART2</code>，<code>3.3V TTL UART</code>，共地，交叉连接。<span class="tag fixed">fixed</span></td></tr>
-            <tr><td>待讨论</td><td><span class="slot">像素到毫米标定、云台制动能力、暂停恢复语义。</span></td></tr>
+            <tr><td>蓝牙边界</td><td>蓝牙可作为比赛入口命令源和调试终端，但只能通过 <code>GreenSystem_Command()</code> 进入比赛程序，不直接拥有状态机或云台输出。<span class="tag fixed">implemented</span></td></tr>
+            <tr><td>待补</td><td><span class="slot">真实毫米标定、最终闭环参数。</span></td></tr>
           </tbody>
         </table>
       </div>
@@ -348,7 +348,7 @@
     <section id="ownership">
       <div class="section-head">
         <h2>顶层</h2>
-        <p>顶层只负责比赛流程、安全边界和子状态机启停。</p>
+        <p>顶层只负责统一解释比赛命令、比赛流程、安全边界和子状态机启停。</p>
       </div>
       <div class="panel-grid">
         <article class="panel">
@@ -357,7 +357,7 @@
         </article>
         <article class="panel">
           <h3>职责</h3>
-          <p>统一处理 <code>START</code>、<code>STOP</code>、暂停、故障、安全输出、2 秒首次锁定窗口和 3 秒连续失败边界。</p>
+        <p>统一处理来自按键或蓝牙的 <code>START1</code>、<code>START2</code>、<code>PAUSE</code>、<code>STOP</code>、故障、安全输出、可重入新一轮启动、第一问/第二问任务选择、Q2 偏移目标和红点预测、红点丢失后持续追最后红点偏移目标、首次达标声光提示和程序层参数。</p>
         </article>
         <article class="panel">
           <h3>不负责</h3>
@@ -377,32 +377,37 @@
             <tr><th>子状态机</th><th>Owner</th><th>解决的问题</th><th>给顶层的输出</th><th>状态</th></tr>
           </thead>
           <tbody>
-            <tr><td>视觉有效性</td><td>MaixCAM2 <code>vision_app</code></td><td>判断红点/绿点是否识别到、坐标和距离是否可信；TI 侧帧过期判断仍待实现。</td><td><code>track_valid</code>、<code>red_valid</code>、<code>green_valid</code>、<code>dist_valid</code>、<code>red_xy</code>、<code>green_xy</code>、<code>dist_mm</code></td><td><span class="tag fixed">implemented</span></td></tr>
-            <tr><td>追踪质量</td><td>MSPM0G3507 控制侧</td><td>判断 2 秒内是否锁定、运行中是否失锁、连续失败是否超 3 秒。</td><td><code>lock_state</code>、<code>initial_locked</code>、<code>fail_ms</code>、<code>score_failed</code></td><td><span class="tag draft">preview</span></td></tr>
-            <tr><td>云台输出</td><td>MSPM0G3507 控制侧 app motion</td><td>管理允许输出、限幅、制动、饱和、停止。</td><td><code>motion_state</code>、<code>out_x</code>、<code>out_y</code>、<code>braking</code>、<code>saturated</code></td><td><span class="tag draft">preview</span></td></tr>
-            <tr><td>声光提示</td><td>MSPM0G3507 控制侧 app indicator</td><td>区分锁定提示、失锁警告、暂停和故障提示。</td><td><code>indicator_state</code></td><td><span class="tag draft">preview</span></td></tr>
+            <tr><td>视觉有效性</td><td>MaixCAM2 <code>vision_app</code> + TI <code>app_vision_comm</code></td><td>判断红点/绿点是否识别到、坐标和距离是否可信；TI 侧维护 online、stale 和最新 <code>TRACK</code>。</td><td><code>track_valid</code>、<code>red_valid</code>、<code>green_valid</code>、<code>dist_valid</code>、<code>red_xy</code>、<code>green_xy</code>、<code>dist_mm</code>、<code>track_stale</code></td><td><span class="tag fixed">implemented</span></td></tr>
+            <tr><td>第一问/第二问目标</td><td>MSPM0G3507 <code>app_green_system</code></td><td><code>task=Q1</code> 时第一帧有效红点坐标锁定为一次性固定目标，追到后结束本轮，完成判定和运动输出都使用真实 <code>err=target-green</code>；<code>task=Q2</code> 时目标为 <code>pred_red + q2_offset</code>，当前红点有效时 <code>pred_red</code> 来自短时速度预测，红点丢失时使用最后红点且不继续预测。</td><td><code>task</code>、<code>q2</code>、<code>target</code>、<code>target_xy</code>、<code>pred</code>、<code>pred_xy</code>、<code>pred_d</code>、<code>rv</code>、<code>err=target-green</code></td><td><span class="tag fixed">implemented</span></td></tr>
+            <tr><td>追踪质量</td><td>MSPM0G3507 <code>app_green_system</code></td><td>第一问 2 秒内追到固定目标点后停止云台、发送视觉 <code>STOP</code> 并回 <code>IDLE</code>；第二问首次满足偏移目标误差和红绿最小分离保护后进入连续跟随，普通失锁不自动进故障停机；K1/K2 声光提示独立按距离 <code>&lt;=8pt</code> 首次触发。</td><td><code>qstate</code>、<code>q2</code>、<code>q1_target_dist_pt</code>、<code>q2_rg_dist_pt</code>、<code>target_ok</code>、<code>q2_in_band</code>、<code>q2_sep_ok</code>、<code>success</code>、<code>failure</code>、<code>first_ok</code>、<code>fail</code>、<code>score_failed</code></td><td><span class="tag fixed">implemented</span></td></tr>
+            <tr><td>云台输出</td><td>MSPM0G3507 <code>app_green_motion</code></td><td>管理双轴步进初始化、保持、急停、全局单轴动作保护和追踪输出；追踪层有 <code>BASE</code>、<code>Q2_FIRST</code>、<code>Q2_FOLLOW</code> 三套 profile，第二问首次追踪和连续跟随使用独立参数。</td><td><code>profile</code>、<code>x/y state</code>、<code>position</code>、<code>remaining</code>、<code>err</code>、<code>step</code>、<code>move</code>、<code>busy</code>、<code>stop</code></td><td><span class="tag fixed">implemented</span></td></tr>
+            <tr><td>声光提示</td><td>MSPM0G3507 <code>app_green_indicator</code> + <code>bsp_buzzer</code></td><td>K1/K2 首次进入 <code>&lt;=8pt</code> 声光距离时触发 2 秒提示窗口：<code>PB15/PB16/PB13</code> 一起常亮，<code>PB6</code> 由 <code>PWM_BUZZER/TIMG8_CCP0</code> 输出约 2kHz 方波；2 秒后自动关闭，未进入声光距离、暂停、停止和故障时立即关闭。</td><td><code>indicator=IND success=&lt;0/1&gt; led=&lt;0/1&gt; buzzer=&lt;0/1&gt; rem=&lt;ms&gt;</code></td><td><span class="tag fixed">implemented</span></td></tr>
           </tbody>
         </table>
       </div>
     </section>
 
-    <section id="keys">
+    <section id="commands">
       <div class="section-head">
-        <h2>按键</h2>
-        <p>按键 BSP 只产生事件，顶层 <code>GreenSystem</code> 负责解释事件并驱动状态转换。</p>
+        <h2>命令入口</h2>
+        <p>按键和蓝牙是并列入口源，统一映射为 <code>GreenSystem_Command(cmd, source)</code> 后由顶层解释。</p>
       </div>
       <div class="table-wrap">
         <table>
           <thead>
-            <tr><th>事件</th><th>语义</th><th>适用状态</th><th>动作</th><th>状态</th></tr>
+            <tr><th>来源</th><th>输入</th><th>统一命令</th><th>适用状态</th><th>动作</th><th>状态</th></tr>
           </thead>
           <tbody>
-            <tr><td><code>GREEN_KEY_K1_SHORT</code></td><td>启动/确认</td><td><code>IDLE</code></td><td>进入 <code>PREPARE</code>；准备成功后发送 <code>MODE,TRACK640</code>，再进入 <code>RUN_ACTIVE</code>。</td><td><span class="tag draft">preview</span></td></tr>
-            <tr><td><code>GREEN_KEY_K1_SHORT</code></td><td>重复启动保护</td><td>非 <code>IDLE</code></td><td>默认忽略，不重复下发 <code>MODE,TRACK640</code>。</td><td><span class="tag draft">preview</span></td></tr>
-            <tr><td><code>GREEN_KEY_K2_SHORT</code></td><td>暂停</td><td><code>RUN_ACTIVE</code></td><td>进入 <code>PAUSED</code>，立即制动云台；MaixCAM2 继续输出 <code>TRACK</code>。</td><td><span class="tag draft">preview</span></td></tr>
-            <tr><td><code>GREEN_KEY_K2_SHORT</code></td><td>恢复</td><td><code>PAUSED</code></td><td>回到 <code>RUN_ACTIVE</code>，继续使用最新有效 <code>TRACK</code> 输入。</td><td><span class="tag draft">preview</span></td></tr>
-            <tr><td><code>GREEN_KEY_K3_SHORT</code></td><td>停止/复位</td><td>任意状态</td><td>进入 <code>IDLE</code>，云台安全输出，关闭普通追踪声光，清失败累计，并发送 <code>STOP</code>。</td><td><span class="tag draft">preview</span></td></tr>
-            <tr><td>长按/组合键</td><td>未定义</td><td>任意状态</td><td>当前不作为状态机入口；标定或调参入口后续单独设计。</td><td><span class="tag draft">preview</span></td></tr>
+            <tr><td><code>KEY</code> / <code>BT</code></td><td><code>K1_SHORT</code> / <code>START1</code></td><td><code>GREEN_CMD_START1</code></td><td>任意状态</td><td>安全停止当前运动、关闭成功声光、清视觉通信残留、清目标和质量计时，进入 <code>task=Q1</code>；准备成功后发送 <code>MODE,TRACK640</code>，再进入 <code>RUN_ACTIVE</code>；第一帧有效红点坐标锁定为固定目标，2 秒内追到该固定点后触发 2 秒声光，停止云台、发送视觉 <code>STOP</code> 并回 <code>IDLE</code>。</td><td><span class="tag fixed">implemented</span></td></tr>
+            <tr><td><code>KEY</code> / <code>BT</code></td><td><code>K2_SHORT</code> / <code>START2</code></td><td><code>GREEN_CMD_START2</code></td><td>任意状态</td><td>安全停止当前运动、关闭成功声光、清视觉通信残留、清目标和质量计时，进入 <code>task=Q2</code>；运行期进入 <code>Q2_FIRST_ACQUIRE</code>，持续根据当前红点生成预测偏移目标；首次满足 <code>target_ok && q2_sep_ok</code> 后切到 <code>Q2_FOLLOW</code>，普通失锁不自动停机。</td><td><span class="tag fixed">implemented</span></td></tr>
+            <tr><td><code>BT</code></td><td><code>PAUSE</code></td><td><code>GREEN_CMD_PAUSE_TOGGLE</code></td><td><code>RUN_ACTIVE</code>/<code>PAUSED</code></td><td>蓝牙调试暂停/恢复；进入暂停时立即制动云台，恢复后继续当前 <code>task</code>。</td><td><span class="tag fixed">implemented</span></td></tr>
+            <tr><td><code>KEY</code> / <code>BT</code></td><td><code>K3_SHORT</code> / <code>STOP</code>/<code>RESET</code></td><td><code>GREEN_CMD_STOP_RESET</code></td><td>任意状态</td><td>进入 <code>IDLE</code>，云台安全输出，清失败累计，并发送 <code>STOP</code>。</td><td><span class="tag fixed">implemented</span></td></tr>
+            <tr><td><code>KEY</code></td><td><code>K1_LONG</code></td><td>预留事件</td><td>任意状态</td><td>主程序当前不映射到比赛入口。</td><td><span class="tag fixed">implemented</span></td></tr>
+            <tr><td><code>BT</code></td><td><code>GSTAT</code></td><td><code>GREEN_CMD_STATUS</code></td><td>任意状态</td><td>只格式化顶层状态，不触发状态转换。</td><td><span class="tag fixed">implemented</span></td></tr>
+            <tr><td><code>BT</code></td><td><code>PGET/PSET/PDEF</code></td><td>调参命令</td><td>任意状态</td><td>读写程序层追踪参数：<code>control_ms</code>、<code>first_ms</code>、<code>err_px</code>、<code>q2_offset_x_px</code>、<code>q2_offset_y_px</code>、<code>q2_target_err_px</code>、<code>q2_min_sep_px</code>、<code>q2_predict_ms</code>、<code>q2_predict_max_px</code>、<code>q2_corner_boost_ms</code>、<code>q2_corner_delta_px</code>、<code>q2first_*</code>、<code>q2follow_*</code>、<code>q2boost_*</code>、<code>q2leak_*</code> 和基础追踪参数；不开放 K1 近目标 Y 补偿、电机底层速度、加速度或外设配置。</td><td><span class="tag fixed">implemented</span></td></tr>
+            <tr><td><code>BT</code></td><td><code>TMON/TMOFF</code></td><td>遥测命令</td><td>任意状态</td><td>按毫秒周期输出 <code>TM GSTAT ...</code>，用于观察 <code>err/qstate/success/target/motion</code> 后调参。</td><td><span class="tag fixed">implemented</span></td></tr>
+            <tr><td><code>BT</code></td><td><code>TRACE ON/OFF</code></td><td>调试命令</td><td>任意状态</td><td>控制 <code>MaixCAM2 -&gt; TI -&gt; Bluetooth</code> 原始视觉接收转发，不改变比赛状态。</td><td><span class="tag fixed">implemented</span></td></tr>
+            <tr><td><code>BT</code></td><td><code>VPING</code>/<code>VTRACK</code>/<code>VSTOP</code></td><td>调试命令</td><td>任意状态</td><td>只用于视觉链路 smoke；正式比赛入口使用 <code>START1</code>/<code>START2</code>/<code>STOP</code>。</td><td><span class="tag fixed">implemented</span></td></tr>
           </tbody>
         </table>
       </div>
@@ -411,7 +416,7 @@
     <section id="protocol">
       <div class="section-head">
         <h2>协议</h2>
-        <p>绿色工程沿用红色工程的 <code>&gt;T</code> / <code>&lt;C</code> ASCII CSV 外形，新增 <code>TRACK</code> 双光斑观测帧。</p>
+        <p>绿色工程使用 <code>&gt;T</code> / <code>&lt;C</code> ASCII CSV 协议，核心观测帧为 <code>TRACK</code> 双光斑数据。</p>
       </div>
       <div class="table-wrap">
         <table>
@@ -419,15 +424,15 @@
             <tr><th>方向</th><th>帧</th><th>字段</th><th>用途</th><th>状态</th></tr>
           </thead>
           <tbody>
-            <tr><td>TI -> MaixCAM2</td><td><code>&gt;T,&lt;seq&gt;,PING</code></td><td><code>seq</code></td><td>连通性检查。</td><td><span class="tag fixed">MaixCAM2 implemented</span> <span class="tag draft">TI preview</span></td></tr>
-            <tr><td>TI -> MaixCAM2</td><td><code>&gt;T,&lt;seq&gt;,MODE,TRACK640</code></td><td><code>seq</code>、<code>TRACK640</code></td><td>进入 640x480 双光斑观测。</td><td><span class="tag fixed">MaixCAM2 implemented</span> <span class="tag draft">TI preview</span></td></tr>
-            <tr><td>TI -> MaixCAM2</td><td><code>&gt;T,&lt;seq&gt;,STOP</code></td><td><code>seq</code></td><td>视觉侧进入空闲。</td><td><span class="tag fixed">MaixCAM2 implemented</span> <span class="tag draft">TI preview</span></td></tr>
-            <tr><td>TI -> MaixCAM2</td><td><code>&gt;T,&lt;seq&gt;,STATUS</code></td><td><code>seq</code></td><td>查询视觉侧状态。</td><td><span class="tag fixed">MaixCAM2 implemented</span> <span class="tag draft">TI preview</span></td></tr>
+            <tr><td>TI -> MaixCAM2</td><td><code>&gt;T,&lt;seq&gt;,PING</code></td><td><code>seq</code></td><td>连通性检查。</td><td><span class="tag fixed">implemented</span></td></tr>
+            <tr><td>TI -> MaixCAM2</td><td><code>&gt;T,&lt;seq&gt;,MODE,TRACK640</code></td><td><code>seq</code>、<code>TRACK640</code></td><td>进入 640x480 双光斑观测。</td><td><span class="tag fixed">implemented</span></td></tr>
+            <tr><td>TI -> MaixCAM2</td><td><code>&gt;T,&lt;seq&gt;,STOP</code></td><td><code>seq</code></td><td>视觉侧进入空闲。</td><td><span class="tag fixed">implemented</span></td></tr>
+            <tr><td>TI -> MaixCAM2</td><td><code>&gt;T,&lt;seq&gt;,STATUS</code></td><td><code>seq</code></td><td>查询视觉侧状态。</td><td><span class="tag fixed">implemented</span></td></tr>
             <tr><td>MaixCAM2 -> TI</td><td><code>&lt;C,&lt;seq&gt;,ACK,cmd,ok,err</code></td><td><code>cmd</code>、<code>ok</code>、<code>err</code></td><td>命令确认。</td><td><span class="tag fixed">implemented</span></td></tr>
             <tr><td>MaixCAM2 -> TI</td><td><code>&lt;C,&lt;seq&gt;,STATUS,mode,fps10,frame,err</code></td><td><code>mode</code>、<code>fps10</code>、<code>frame</code>、<code>err</code></td><td>低频状态输出。</td><td><span class="tag fixed">implemented</span></td></tr>
-            <tr><td>MaixCAM2 -> TI</td><td><code>&lt;C,&lt;seq&gt;,TRACK,...</code></td><td><code>frame,iw,ih,track_valid,red_valid,green_valid,dist_valid,red_x,red_y,green_x,green_y,err_x,err_y,dist_mm,red_conf,green_conf,lat,err</code></td><td>双光斑观测输入；<code>err_x/err_y = red - green</code>。</td><td><span class="tag fixed">implemented</span></td></tr>
+            <tr><td>MaixCAM2 -> TI</td><td><code>&lt;C,&lt;seq&gt;,TRACK,...</code></td><td><code>frame,iw,ih,track_valid,red_valid,green_valid,dist_valid,red_x,red_y,green_x,green_y,err_x,err_y,dist_mm,red_conf,green_conf,lat,err</code></td><td>双光斑观测输入；MaixCAM2 输出 <code>red-green</code> 原始误差，TI 侧第二问运行期改用预测偏移目标到绿点的误差 <code>target-green</code>。</td><td><span class="tag fixed">implemented</span></td></tr>
             <tr><td>MaixCAM2 -> TI</td><td><code>&lt;C,&lt;seq&gt;,ERR,code</code></td><td><code>code</code></td><td>视觉侧错误。</td><td><span class="tag fixed">implemented</span></td></tr>
-            <tr><td>时序</td><td><code>TRACK 20ms / STATUS 1500ms</code></td><td><code>TRACK_STALE=150ms</code></td><td><code>TRACK</code> 约 <code>50Hz</code> 连续输出；<code>150ms</code> 未更新时 TI 判定视觉帧过期。</td><td><span class="tag fixed">MaixCAM2 implemented</span> <span class="tag draft">TI preview</span></td></tr>
+            <tr><td>时序</td><td><code>TRACK 20ms / STATUS 1500ms</code></td><td><code>TRACK_STALE=150ms</code></td><td><code>TRACK</code> 约 <code>50Hz</code> 连续输出；<code>150ms</code> 未更新时 TI 判定视觉帧过期。</td><td><span class="tag fixed">implemented</span></td></tr>
           </tbody>
         </table>
       </div>
@@ -444,11 +449,11 @@
             <tr><th>状态</th><th>职责</th><th>进入条件</th><th>退出条件</th><th>动作边界</th><th>状态</th></tr>
           </thead>
           <tbody>
-            <tr><td><code>IDLE</code></td><td>待机，云台安全输出，声光关闭。</td><td>上电完成、<code>STOP</code> 或故障复位。</td><td><code>START</code> 且依赖可用。</td><td>不输出普通追踪动作。</td><td><span class="tag draft">preview</span></td></tr>
-            <tr><td><code>PREPARE</code></td><td>清计时、清失败、确认视觉/云台/按键链路。</td><td><code>START</code> 被接受。</td><td>准备成功进 <code>RUN_ACTIVE</code>；依赖异常进 <code>FAULT</code>。</td><td>只允许初始化子状态，不进入追踪输出闭环。</td><td><span class="tag draft">preview</span></td></tr>
-            <tr><td><code>RUN_ACTIVE</code></td><td>追踪运行期，管理首次锁定窗口和连续失败边界。</td><td><code>PREPARE</code> 成功。</td><td><code>PAUSE</code>、<code>STOP</code>、严重故障或连续失败超限。</td><td>允许追踪闭环输出，仍受暂停和安全条件抢占。</td><td><span class="tag draft">preview</span></td></tr>
-            <tr><td><code>PAUSED</code></td><td>立即制动，保留光斑位置用于测距。</td><td>暂停键触发。</td><td>继续运行或停止。</td><td>暂停优先级高于普通追踪输出。</td><td><span class="tag draft">preview</span></td></tr>
-            <tr><td><code>FAULT</code></td><td>安全停机，记录故障原因，禁止继续普通追踪。</td><td>视觉长期无效、通信过期、云台异常、连续失败超限。</td><td>人工 <code>RESET</code> 或 <code>STOP</code> 回 <code>IDLE</code>。</td><td>输出安全值，保留最后失败原因。</td><td><span class="tag draft">preview</span></td></tr>
+            <tr><td><code>IDLE</code></td><td>待机，云台安全输出。</td><td>上电完成、<code>STOP</code> 或故障复位。</td><td><code>START1</code> 或 <code>START2</code>。</td><td>不输出普通追踪动作；蓝牙程序层调参和遥测命令仍可用。</td><td><span class="tag fixed">implemented</span></td></tr>
+            <tr><td><code>PREPARE</code></td><td>清失败累计，延迟一个 tick 后向视觉侧发送 <code>MODE,TRACK640</code>。</td><td><code>START1</code> 或 <code>START2</code> 被接受。</td><td>发送成功进 <code>RUN_ACTIVE</code>；发送失败进 <code>FAULT</code>。</td><td>只做启动握手，不进入追踪输出闭环。</td><td><span class="tag fixed">implemented</span></td></tr>
+            <tr><td><code>RUN_ACTIVE</code></td><td>根据 <code>task=Q1/Q2</code> 执行第一问固定点一次性追踪或第二问预测偏移目标连续追踪。</td><td><code>PREPARE</code> 成功。</td><td><code>Q1</code> 追到固定点、<code>PAUSE</code>、<code>STOP</code>、第一问连续失锁评分失败、视觉启动异常或非法状态。</td><td><code>Q1</code> 只追启动后锁定的固定点；<code>Q2</code> 维护 <code>Q2_FIRST_ACQUIRE</code>、<code>Q2_FOLLOW</code>、<code>Q2_RED_LOST_GRACE</code>、<code>Q2_REACQUIRE_HOLD</code>，用红点预测偏移目标控制绿点。</td><td><span class="tag fixed">implemented</span></td></tr>
+            <tr><td><code>PAUSED</code></td><td>立即制动，保留光斑位置用于测距。</td><td>蓝牙 <code>PAUSE</code> 触发。</td><td>再次蓝牙 <code>PAUSE</code> 继续运行，或停止。</td><td>暂停优先级高于普通追踪输出。</td><td><span class="tag fixed">implemented</span></td></tr>
+            <tr><td><code>FAULT</code></td><td>安全停机，记录故障原因，禁止继续普通追踪。</td><td>视觉启动命令发送失败、非法状态或非法命令。</td><td>人工 <code>RESET</code> 或 <code>STOP</code> 回 <code>IDLE</code>。</td><td>输出安全值，保留最后失败原因。</td><td><span class="tag fixed">implemented</span></td></tr>
           </tbody>
         </table>
       </div>
@@ -457,7 +462,7 @@
     <section id="run-active">
       <div class="section-head">
         <h2>运行期</h2>
-        <p><code>RUN_ACTIVE</code> 内部先按粗粒度追踪质量划分，后续再细化。</p>
+        <p><code>RUN_ACTIVE</code> 内部先按 <code>task</code> 分为第一问固定点一次性追踪和第二问预测偏移目标连续追踪；第二问再细分运行阶段。</p>
       </div>
       <div class="table-wrap">
         <table>
@@ -465,11 +470,14 @@
             <tr><th>运行期阶段</th><th>职责</th><th>进入条件</th><th>退出条件</th><th>输出</th></tr>
           </thead>
           <tbody>
-            <tr><td><code>ACQUIRE_FIRST_LOCK</code></td><td>启动后的 2 秒窗口内争取首次进入 <code>&lt;=3cm</code>。</td><td><code>RUN_ACTIVE</code> 初始阶段。</td><td>误差达标进 <code>TRACK_LOCKED</code>；2 秒仍未达标进入未锁定处理。</td><td>追踪输出开启，声光不报锁定。</td></tr>
-            <tr><td><code>TRACK_LOCKED</code></td><td>红绿中心距离保持 <code>&lt;=3cm</code>。</td><td>视觉有效且距离达标。</td><td>距离超限或视觉失效。</td><td>继续闭环追踪，连续声光提示。</td></tr>
-            <tr><td><code>TRACK_UNLOCKED</code></td><td>距离 <code>&gt;3cm</code>，但尚未连续失败 3 秒。</td><td>距离超限。</td><td>重新达标回 <code>TRACK_LOCKED</code>；连续失败超限进 <code>SCORE_FAILED</code>。</td><td>继续追踪，累计 <code>fail_ms</code>。</td></tr>
-            <tr><td><code>REACQUIRE</code></td><td>视觉短暂丢失或通信过期后恢复追踪。</td><td>视觉无效或帧过期。</td><td>视觉恢复后按距离进入锁定或失锁；长期无效进入故障。</td><td>输出限幅或保持安全追踪策略。</td></tr>
-            <tr><td><code>SCORE_FAILED</code></td><td>连续失败超过题面 3 秒边界。</td><td><code>fail_ms</code> 超限。</td><td>顶层进入 <code>FAULT</code> 或等待人工停止。</td><td>安全输出，保留失败证据。</td></tr>
+            <tr><td><code>Q2_FIRST_ACQUIRE</code></td><td>首次追踪阶段，使用 <code>Q2_FIRST</code> profile；有效红点生成预测偏移目标，转角/换向时可触发后续跟随增强。</td><td><code>RUN_ACTIVE</code> 初始阶段。</td><td>首次 <code>target_ok && q2_sep_ok</code> 后进入 <code>Q2_FOLLOW</code>；超出首次窗口进入失锁质量状态但不自动停机。</td><td><span class="tag fixed">implemented</span></td></tr>
+            <tr><td><code>Q2_FOLLOW</code></td><td>连续追踪阶段，使用 <code>Q2_FOLLOW</code> profile；每个控制周期追踪预测红点下方固定偏移目标，死区内同向小误差可通过泄漏累计补 1 步，转角增强期间降低有效死区和细步阈值。</td><td>首次满足偏移目标误差和红绿最小分离保护后。</td><td>红点消失进入 <code>Q2_RED_LOST_GRACE</code>；stale、绿点丢失或无最后红点进入 <code>Q2_REACQUIRE_HOLD</code>。</td><td><span class="tag fixed">implemented</span></td></tr>
+            <tr><td><code>Q2_RED_LOST_GRACE</code></td><td>红点消失但绿点仍有效时，持续使用最后一次红点下方固定偏移目标；首次达标前仍使用 <code>Q2_FIRST</code> profile，首次达标后使用 <code>Q2_FOLLOW</code> profile。</td><td><code>red_valid=0</code>、<code>green_valid=1</code>、<code>last_red=1</code>。</td><td>红点恢复后按是否已经首次达标回到 <code>Q2_FOLLOW</code> 或 <code>Q2_FIRST_ACQUIRE</code>；绿点丢失或 stale 后进入 <code>Q2_REACQUIRE_HOLD</code>。</td><td><span class="tag fixed">implemented</span></td></tr>
+            <tr><td><code>Q2_REACQUIRE_HOLD</code></td><td>视觉 stale、绿点丢失或没有可用最后红点时安全停止当前动作，等待恢复；不因普通失锁进入最终停机。</td><td>无可用追踪目标。</td><td>红绿恢复后按是否已经首次达标回到 <code>Q2_FOLLOW</code> 或 <code>Q2_FIRST_ACQUIRE</code>。</td><td><span class="tag fixed">implemented</span></td></tr>
+            <tr><td><code>TRACK_LOCKED</code></td><td>质量状态：K1 为固定点已达标，K2 为偏移目标误差达标且红绿距离满足最小分离；声光提示由独立 <code>&lt;=8pt</code> 距离判断触发。</td><td><code>target_ok=1</code> 且 <code>q2_sep_ok=1</code>。</td><td>K1 立即停止并回 <code>IDLE</code>；K2 离开达标条件或视觉不可用后进入失锁或重捕获质量状态。</td><td><span class="tag fixed">implemented</span></td></tr>
+            <tr><td><code>TRACK_UNLOCKED</code></td><td>质量状态：当前未达标，且没有处在最后红点保护追踪状态。</td><td><code>target_ok=0</code> 或 <code>q2_sep_ok=0</code>。</td><td>重新达标回 <code>TRACK_LOCKED</code>；Q2 仅累计 <code>fail</code> 供观察，不自动进入最终停机。</td><td><span class="tag fixed">implemented</span></td></tr>
+            <tr><td><code>REACQUIRE</code></td><td>质量状态：红点消失但绿点仍有效，持续朝最后红点偏移目标运动。</td><td><code>Q2_RED_LOST_GRACE</code>。</td><td>红点恢复后回到预测偏移目标跟随；绿点丢失或 stale 后进入失锁。</td><td><span class="tag fixed">implemented</span></td></tr>
+            <tr><td><code>SCORE_FAILED</code></td><td>第一问评分边界使用；第二问连续追踪不再因普通失锁进入此状态。</td><td>K1 超过 <code>first_ms</code> 仍未追到固定点。</td><td>顶层进入 <code>FAULT</code>，等待人工停止/复位。</td><td><span class="tag fixed">implemented</span></td></tr>
           </tbody>
         </table>
       </div>
@@ -483,11 +491,11 @@
       <div class="notes">
         <article class="note-box">
           <h3>字段</h3>
-          <p><code>state</code>、<code>run_phase</code>、<code>vision_valid</code>、<code>stale_ms</code>、<code>red_xy</code>、<code>green_xy</code>、<code>dist_mm</code>、<code>fail_ms</code>、<code>pause</code>、<code>last_reason</code>、<code>out_x</code>、<code>out_y</code>。</p>
+          <p><code>state</code>、<code>phase</code>、<code>task</code>、<code>qstate</code>、<code>q2</code>、<code>q2_ms</code>、<code>src</code>、<code>vision</code>、<code>online</code>、<code>stale</code>、<code>frame</code>、<code>target</code>、<code>target_xy</code>、<code>red</code>、<code>green</code>、<code>last_red</code>、<code>last_red_ms</code>、<code>pred</code>、<code>pred_xy</code>、<code>pred_d</code>、<code>rv</code>、<code>err</code>、<code>q1_target_dist_pt</code>、<code>q2_rg_dist_pt</code>、<code>target_ok</code>、<code>q2_in_band</code>、<code>q2_sep_ok</code>、<code>success</code>、<code>failure</code>、<code>first_ok</code>、<code>fail</code>、<code>score_failed</code>、<code>reason</code>、<code>indicator</code>、<code>motion</code>；K1 时 <code>q2=NA</code>，<code>indicator</code> 内含 <code>rem</code>，表示 2 秒提示剩余毫秒。</p>
         </article>
         <article class="note-box">
           <h3>最小验证</h3>
-          <p>先用 mock 或串口命令模拟 <code>K1/K2/K3</code>，确认顶层跳转、<code>MODE,TRACK640</code>、<code>STOP</code>、<code>TRACK</code> 持续更新、150ms stale、暂停制动、2 秒首次锁定和 3 秒连续失败边界。</p>
+          <p>先用按键和蓝牙分别触发 <code>K1/START1</code>、<code>K2/START2</code>、<code>K3/STOP</code>，确认两种来源进入同一顶层跳转；再确认重复 <code>START1/START2</code> 会清目标、视觉通信残留和上一轮 <code>TRACK</code> 缓存并重新开一轮，<code>PGET/PSET/PDEF</code> 可读写参数，<code>TMON/TMOFF</code> 输出周期遥测；<code>START1</code> 后第一帧有效红点坐标应锁定为固定 <code>target_xy</code>，红点移动后 <code>target_xy</code> 不再变化，K1 状态行应显示 <code>q2=NA</code>，运动输出使用真实 <code>err=target-green</code>，追到固定点后回 <code>IDLE</code>；<code>START2</code> 后应能观察 <code>last_red</code>、<code>pred</code>、<code>pred_d</code>、<code>rv</code>，预测关闭或首帧时 <code>target_xy</code> 约等于红点下方固定偏移，首次 <code>target_ok && q2_sep_ok</code> 切到 <code>q2=FOLLOW</code>，转角时 <code>motion</code> 内 <code>boost</code> 短时大于 0，死区泄漏可在 <code>leak</code> 字段观察，红点遮挡时进入 <code>q2=RED_LOST_GRACE</code> 并继续追最后红点偏移目标，红点恢复后回到预测偏移目标跟随。</p>
         </article>
       </div>
     </section>

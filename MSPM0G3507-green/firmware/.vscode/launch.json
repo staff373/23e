@@ -1,0 +1,12 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "TI: Build Flash Run",
+            "type": "node-terminal",
+            "request": "launch",
+            "command": "powershell -NoProfile -ExecutionPolicy Bypass -File \"${workspaceFolder}/.vscode/ti-build-flash.ps1\" -Flash",
+            "cwd": "${workspaceFolder}"
+        }
+    ]
+}
